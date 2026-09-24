@@ -471,8 +471,8 @@ npm and Homebrew, no Ubuntu binary, only tiny unrelated GitHub repos; taken
 on PyPI, which matters only if Python bindings ship. Near-misses: `gov`
 (Governator) and `kern` (a Rust sandbox runtime for AI-generated code),
 which also makes `ker` risky. The céad ("hundred", "the first") overlap is
-accepted: the human is depth 0. To do: publish `cead` 0.0.x to reserve the
-crate; check domains and trademarks.
+accepted: the human is depth 0. `cead` 0.0.1 is published on crates.io
+(2026-09-23); the name is held. To do: check domains and trademarks.
 
 Vocabulary that fell out, for internal naming if wanted: `glas` (lock;
 in-guest enforcement),
