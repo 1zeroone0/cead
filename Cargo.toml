@@ -1,0 +1,21 @@
+[workspace]
+members = ["."]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[package]
+name = "cead"
+version = "0.0.1"
+edition = "2024"
+description = "An agent harness built as a microVM. Name reserved; the first release is in progress."
+repository = "https://github.com/1zeroone0/cead"
+license = "Apache-2.0"
+
+[lints]
+workspace = true
