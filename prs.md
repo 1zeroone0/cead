@@ -1,5 +1,27 @@
 # prs
 
+## Next session
+
+Read AGENTS.md, README.md and CODE.md first; this file is the queue.
+
+Before any cead work, one piece of housekeeping outside this repo. Rename
+the `~/dev` commons to `rr`, on disk and on GitHub (`1zeroone0/dev`,
+private). Steps, in order: land any open cead PR so no worktree holds a
+path into `~/dev`; `mv ~/dev ~/rr`; `gh repo rename rr`; set the remote
+URL; fix the `land` alias in `~/.config/gh/config.yml`, which points at
+`~/dev/bin/land`; confirm cead's remote and worktrees still resolve from
+`~/rr/cead`. Then reshape what `rr` tracks: in are AGENTS.md (cead's is
+the current template), rust.md, keybinds.md, `bin/`, `skills/`; out are
+`career/` (leave git entirely), `linux-codebase-map/` (its own repo, the
+cead move), stray root notes (to the project they concern, or deleted),
+and the allowlist `.gitignore` (replace with a normal one). Do the
+rename as one commit on `rr`'s main, the reshape as a PR there. The
+operator lands both.
+
+Then cead: draft PRs from the sections below, §1 first, one worktree
+each. Each PR's description absorbs its section, and the section is
+deleted here in that PR. Delete this file in the PR that empties it.
+
 Transitory. Each section becomes a draft PR's description, then is deleted
 here. Delete the file when empty. Sections are in build order. Items are
 leanings with their reasoning; "(checked)" means read against source on
@@ -471,8 +493,8 @@ npm and Homebrew, no Ubuntu binary, only tiny unrelated GitHub repos; taken
 on PyPI, which matters only if Python bindings ship. Near-misses: `gov`
 (Governator) and `kern` (a Rust sandbox runtime for AI-generated code),
 which also makes `ker` risky. The céad ("hundred", "the first") overlap is
-accepted: the human is depth 0. To do: publish `cead` 0.0.x to reserve the
-crate; check domains and trademarks.
+accepted: the human is depth 0. `cead` 0.0.1 is published on crates.io
+(2026-09-23); the name is held. To do: check domains and trademarks.
 
 Vocabulary that fell out, for internal naming if wanted: `glas` (lock;
 in-guest enforcement),
