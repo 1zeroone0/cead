@@ -55,6 +55,7 @@ For every subsequent commit, add a comment to the PR briefly describing:
 6. **How it breaks** — be adversarial about your own work.
 7. **Where you are not confident** — every choice you made that you're not confident in.
 8. **Verify yourself** — the 2–3 places most worth my direct attention before merging.
+9. **Next steps** — choose one of these three: additional commits (briefly describe), blocked (explain what is needed), or finished (all merge requirements met, PR is ready for review)
 
 Every milestone yields one measurement and one honest limitation, in the PR. Nothing enters that the current milestone doesn't demand.
 
