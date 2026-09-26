@@ -57,6 +57,8 @@ For every subsequent commit, add a comment to the PR briefly describing:
 8. **Verify yourself** — the 2–3 places most worth my direct attention before merging.
 9. **Next steps** — choose one of these three: additional commits (briefly describe), blocked (explain what is needed), or finished (all merge requirements met, PR is ready for review)
 
+Before marking a PR ready, fold what is durable from its comments (decisions, the measurement, the limitation) into the description; the description lands in git, the comments stay on GitHub.
+
 Every milestone yields one measurement and one honest limitation, in the PR. Nothing enters that the current milestone doesn't demand.
 
 You may freely commit and push to PR branches via their worktrees.
