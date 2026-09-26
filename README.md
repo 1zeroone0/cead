@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="assets/lockup.png" width="220" alt="cead">
+  <img src="assets/lockup.png" width="220" alt="cead"><br>
+  <em>cead</em> (Irish: permission; "kyad")
 </p>
 
 cead is an agent harness built as a microVM.
 The model gets a Linux machine of its own and a shell to drive it: the kernel permits each command, and eBPF witnesses it.
-*cead* (Irish: permission; "kyad").
 
 ## What cead is
 
