@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="assets/lockup-light.png">
-    <img src="assets/lockup.png" width="220" alt="cead">
+    <source media="(prefers-color-scheme: light)" srcset="assets/lockup-light.svg">
+    <img src="assets/lockup.svg" width="220" alt="cead">
   </picture><br>
   <em>cead</em> (Irish: permission; "kyad")
 </p>
