@@ -6,7 +6,7 @@
   <em>cead</em> (Irish: permission; "kyad")
 </p>
 
-cead is an agent harness built as a microVM.
+cead is an agent harness built as a microVM: a userspace whose user is a model.
 The model gets a Linux machine of its own and a shell to drive it: the kernel permits each command, and eBPF witnesses it.
 
 ## What cead is
@@ -108,9 +108,16 @@ The machine runs wherever the cead CLI runs: a laptop or a cloud VM with a hyper
 The model runs wherever the declaration's endpoint is: a hosted API or a local server.
 The CLI drives everything below: it reads the declaration, boots, runs, snapshots, forks, and reads the log.
 
-- The machine is the unit of scale.
-  A snapshot captures a machine and all its state; a fork boots another machine from it, the way a git worktree forks a checkout.
-  Kubernetes can schedule machines as pods; Firecracker was built for this shape of workload.
+The machine is the unit of scale.
+Work fans out three ways, told apart by who spawns and when:
+
+| Use | Who spawns | When | Mechanism |
+|---|---|---|---|
+| evals | operator | before the run | scale-out: N machines from one declaration |
+| reinforcement learning | operator or trainer | mid-run, at a chosen state | fork: K machines from one snapshot, the way a git worktree forks a checkout |
+| long or autonomous tasks | the model | whenever it decides | `rlm`: a sub-agent process inside the machine |
+
+- Kubernetes can schedule machines as pods; Firecracker was built for this shape of workload.
 - The long-term direction is one box: model, inference engine, kernel and cead.
 
 ### Identity
