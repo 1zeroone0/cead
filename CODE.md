@@ -57,13 +57,14 @@ Which model a seed gets follows from its signature: interleaving across processe
 - **backend**: what boots a machine. Firecracker on Linux, Virtualization.framework on macOS. Same guest, same evidence.
 - **init**: PID 1 in the guest. Assembles the view (task image as root, overlay, core first on PATH, descriptors mounted), applies policy, execs the harness.
 - **harness**: the Rust program in the machine and its memory manager. Runs each process's cycle, installs kernel policy in the fork-exec gap, supplies the calls, writes receipts.
-- **process**: one harness cycle with its own cgroup, window, shell and budget. Started by `run` at depth 0 or by `rlm` below it.
+- **process**: one harness cycle with its own cgroup, window, shell, limits and budget. Started by `run` at depth 0 or by `rlm` below it.
 - **run**: one machine, one root process and its tree, one log. Started from the operator shell or one-shot by `cead run`; the machine ends with it.
 - **step**: one command and its observation. The unit of budget and of measurement.
 - **window**: the context the model can address now. A cache over state.
 - **pinned**: the part of the window eviction never touches: the system prompt.
 - **bounded**: output admitted to the window; constructible only by truncation. The remainder **spills** to a file.
-- **budget**: what a process may spend. Moves into children, never copied. What it counts is declaration policy.
+- **limit**: a cap on one process, whatever its place in the tree: window size, bound, steps, wall time. The rlimit analogue: set in the fork-exec gap, inherited as a copy.
+- **budget**: what a process tree may spend. A parent moves part of what remains into each child, never copies it, so the tree never spends more than the root was given. Closest to a cgroup, but split rather than shared. What it counts is declaration policy.
 - **slice**: the bytes a child receives on stdin, sealed.
 - **descriptor**: state the model holds this session, bound to an object with rights. Minted by cead, never discovered. A capability. A child's is **attenuated**.
 - **command**: what the model writes. Shell over the core plus the task image.
