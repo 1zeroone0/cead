@@ -40,6 +40,7 @@ Every PR description has these sections, kept current:
 
 PR descriptions become the squash-commit body, so write them as records of truth with links to related PRs (#PR).
 A leaning lives in the description of the PR that will settle it. Once code settles it, the why is a doc comment. No third document.
+Until its PR exists, a leaning is a comment on #7 (Horizon), in the description template. Check #7 before opening a PR; update a comment as intent clarifies; when one is ready, open its PR and delete the comment.
 
 The first commit is the model, when `CODE.md` says the seed's shape demands one; its checker is green before any code exists.
 The next commit is typed stubs ONLY: types and signatures, placeholder bodies, the language's type gate green. The diff defines that PR's scope; one signature per action of the model. `CODE.md` names each language's stub and gate.
