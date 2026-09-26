@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/lockup.png" width="220" alt="cead"><br>
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="assets/lockup-light.png">
+    <img src="assets/lockup.png" width="220" alt="cead">
+  </picture><br>
   <em>cead</em> (Irish: permission; "kyad")
 </p>
 
