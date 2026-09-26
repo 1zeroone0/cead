@@ -6,7 +6,7 @@
   <em>cead</em> (Irish: permission; "kyad")
 </p>
 
-cead is an agent harness built as a microVM.
+cead is an agent harness built as a microVM: a userspace whose user is a model.
 The model gets a Linux machine of its own and a shell to drive it: the kernel permits each command, and eBPF witnesses it.
 
 ## What cead is
