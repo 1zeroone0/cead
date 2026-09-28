@@ -1,0 +1,29 @@
+# #4 comments
+
+## 1zeroone0 · 2026-09-26T23:13:43Z
+
+1. **Built** — Deployment's scale bullet replaced by a use / who / when / mechanism table.
+2. **Why** — the three fan-outs (scale-out, machine fork, `rlm`) were being conflated; who spawns and when is what separates them.
+3. **Bloat** — replaces a bullet rather than adding a section; the worktree analogy moved into the fork row.
+4. **Drift** — the table is now the only statement of the use cases; the Horizon PR's comments point here rather than restating it.
+5. **Trust surface** — prose only; nothing is testable yet.
+6. **How it breaks** — the table promises scale-out and fork before either exists; both are Horizon items.
+7. **Not confident** — whether "reinforcement learning" should say "operator or trainer"; whether the table belongs in Deployment or in "What cead is".
+8. **Verify yourself** — the table rows against your intent.
+9. **Next steps** — finished; ready for review.
+
+## 1zeroone0 · 2026-09-26T23:20:45Z
+
+1. **Built** — the gloss moves into the lockup's centered block as a caption, after a `<br>`.
+2. **Why** — GitHub joins soft-wrapped lines into one paragraph, so the gloss rendered as a dangler after the second sentence.
+3. **Bloat** — no lines added outside the existing HTML block.
+4. **Drift** — PR description updated.
+5. **Trust surface** — not rendered locally; GitHub's HTML sanitizer allows `<br>` and `<em>` inside `<p align>`.
+6. **How it breaks** — the lockup has a transparent ground with stone-colored letters, so on GitHub light mode both the logo and the dark caption sit on white; unchanged by this PR.
+7. **Not confident** — whether you meant the caption under the logo or under the opening sentence.
+8. **Verify yourself** — the rendered README top on the PR's Files tab.
+9. **Next steps** — finished; ready for review.
+
+## 1zeroone0 · 2026-09-26T23:26:45Z
+
+Caption commit moved to #3, which now owns the README's lockup block along with the assets. This PR is the framing text only.
