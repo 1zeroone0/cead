@@ -35,36 +35,40 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 |---|---|---|
 | audit record | One per call, in three parts under the call's id: intent, decision, witness. Linux audit's shape. | |
 | authority | How far a binary can go beyond its argv: fixed, launcher, client, interpreter, service. | |
+| availability | The job runs and ends. The host guarantees it, and can always deny it. | `spec/cead.tla` |
 | bounded | Output admitted to the window, constructible only by truncation. The remainder **spills** to a file. | |
 | call | One command the model issues and what it gets back: a system call into the harness. Untyped argv and stdin in, text and exit code out. The unit of limits and measurement. cead adds `rlm` and `finish`; every other call is a well-known CLI. | |
 | call table | The system call table: the toolset. | |
 | cead | The project, the operator's binary, and its shell over a manifest and its state. | crate and binary `cead` |
 | command | What the model writes: shell over the core plus the task image. | |
+| confidentiality | No one outside the machine can read it. Only the confidential backend claims it, guaranteed by its processor. |  |
 | core | The invariant tools every machine has: brush, uutils, grep, git, sqlite3. nix-built, static, first on PATH. | |
-| crash | The machine ends without `finish`. | |
+| crash | The machine ends without an acknowledged exit record. The job is unknown. | `spec/cead.tla` |
 | decision | The outcome of checking a call against policy: allow or deny. | |
 | descriptor | State the model holds this session, bound to an object with rights. Minted by cead, never discovered; a capability. A child's is **attenuated**. | |
 | evict | Dispose at any tier: window span, KV block, process, machine. | |
-| executed | What the kernel ran: the truth an audit record records. | |
+| executed | What the kernel ran: the truth an audit record records. | `spec/cead.tla` |
 | harness | The Rust program in the machine: the model's kernel. Runs each process, installs kernel policy in the fork-exec gap, serves the calls, writes audit records. | |
 | host | What runs a machine: hardware, a kernel with a hypervisor, the VMM's process and `cead`. The model cannot reach it. | |
 | init | PID 1 in the machine. Assembles the view (task image as root, overlay, core first on PATH, descriptors), applies policy, execs the harness. | |
+| integrity | The log says only what the machine signed, in the machine's order. Guaranteed by the machine's signature and hash chain. | `spec/cead.tla` |
 | interface | One of the three lines everything else is swappable between. | |
+| job | One query's work: a root process, its tree, one log. Started by `cead run`. Spans one boot until recovery resumes it on another. |  |
 | limit | A cap on one process: window size, bound, calls, wall time. The rlimit analogue: set in the fork-exec gap, inherited as a copy. | |
-| log | The append-only sequence of audit records, held outside the machine. A finished run cites its hash. | |
+| log | The machine's signed hash chain of audit records, ending in its exit record (`finish` or `timeout`), held outside the machine. With the exit record and no gap, provably complete; without it, the job is unknown. | `spec/cead.tla` |
 | machine | The unit: pinned kernel, core, task image, descriptors, call table, policy and model endpoint, booted in a microVM by a VMM. | |
 | manifest | The one file that pins a machine by content. Equal manifests are the same experiment; its hashes are the version vector. | |
-| message | One part of an audit record in transit to the log. Can be lost, delayed, reordered, duplicated or forged; the log accepts only what the machine sent. | |
+| message | One link of the machine's chain in transit to the log. Can be lost, delayed, reordered, duplicated or forged; the log accepts only what the machine signed. | `spec/cead.tla` |
 | meter | What a process tree may spend, from KeyKOS. A child's meter hangs below its parent's; every spend is charged to each meter above it, so a tree never outspends its root. A parent can cap or revoke a child's meter. What it counts is manifest policy. | |
 | model endpoint | Where inference is, reached only through the host proxy; keys never enter the machine. | |
 | operator | The human at depth 0. Types `cead` or `cead run`; never types a call. | |
 | pinned | The part of the window eviction never touches: the system prompt. | |
 | policy | The rows of the call table in Cedar, compiled to seccomp and Landlock, installed before exec. Permit-all is a declared policy, not an absence. | |
 | process | An OS process running one harness cycle, with its own cgroup, window, shell, limits and meter; each call runs as its child. Running, ready, blocked or zombie. Started by `run` at depth 0, `rlm` below. | |
+| processor | What a process runs on. For the machine, the CPU; for the model's process, the inference engine behind the model endpoint. |  |
 | query | The argv of `run` or `rlm`, commit-message sized. Anything longer is context. | |
 | rights | What a call may do to state: read, write. | |
 | ring | A privilege layer: model processes; harness and tracer; host. | |
-| run | One machine, one root process and its tree, one log. From the operator shell or one-shot `cead run`; the machine ends with it. | |
 | slice | The bytes a child receives on stdin, sealed. | |
 | snapshot | The whole machine at an instant. The fork mechanism. | |
 | task image | The tools one task brings: a read-only OCI image with a label declaring its tools, attached at boot. | |

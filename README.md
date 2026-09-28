@@ -48,8 +48,8 @@ System diagram to come with the first release.
 - Not a container runtime.
   cead uses container images and container schedulers, and replaces the container itself with a microVM.
 - Not a conversation.
-  Nothing carries between runs except state in the machine.
-  A run's context window is the system prompt, the query, and what the model has read since.
+  Nothing carries between jobs except state in the machine.
+  A job's context window is the system prompt, the query, and what the model has read since.
 - Not a policy.
   You bring your own, written in Cedar, and cead compiles it into kernel rules; cead does not decide what a model should be allowed to do.
 - Not a new interface for the model.
@@ -70,7 +70,7 @@ Two ways to run it:
 
 A query is the length of a commit message; anything longer is a file in the machine for the model to read.
 
-What a run does, from manifest to first command:
+What a job does, from manifest to first command:
 
 1. The VMM boots one kernel and attaches two read-only disks: the core (cead's tools, policy and eBPF programs, built by nix) and the task image.
 2. init runs as root, before any model process exists.
@@ -113,8 +113,8 @@ Work fans out three ways, told apart by who spawns and when:
 
 | Use | Who spawns | When | Mechanism |
 |---|---|---|---|
-| evals | operator | before the run | scale-out: N machines from one manifest |
-| reinforcement learning | operator or trainer | mid-run, at a chosen state | fork: K machines from one snapshot, the way a git worktree forks a checkout |
+| evals | operator | before the job | scale-out: N machines from one manifest |
+| reinforcement learning | operator or trainer | mid-job, at a chosen state | fork: K machines from one snapshot, the way a git worktree forks a checkout |
 | long or autonomous tasks | the model | whenever it decides | `rlm`: a sub-agent process inside the machine |
 
 - Kubernetes can schedule machines as pods; Firecracker was built for this shape of workload.
@@ -123,7 +123,7 @@ Work fans out three ways, told apart by who spawns and when:
 ### Identity
 
 - The machine is the boundary.
-  Everything a run can touch is inside one disposable microVM, so the questions that usually need users, roles and sessions collapse to one: which machine.
+  Everything a job can touch is inside one disposable microVM, so the questions that usually need users, roles and sessions collapse to one: which machine.
 - A manifest answers it by hash.
   Two machines with the same manifest are the same experiment.
 - Operator and model are told apart by where they stand.
@@ -162,7 +162,7 @@ Rules beyond that come with the first release.
 - Forking, of the machine.
   A snapshot of a running machine boots another machine that diverges from the same state.
 - Finish.
-  `finish` ends a process with its answer; when the root process finishes, the run is over and the machine is gone.
+  `finish` ends a process with its answer; when the root process finishes, the job is over and the machine is gone.
 
 ### Data
 
@@ -172,7 +172,7 @@ Rules beyond that come with the first release.
 - Postgres is a task tool for tasks that need extensions, concurrency or an existing data directory.
   It runs inside the machine, so a snapshot still captures it.
 - State leaves the machine on purpose.
-  A run's answer is stdout; a checkout can be pushed; a snapshot can be exported.
+  A job's answer is stdout; a checkout can be pushed; a snapshot can be exported.
   Nothing else leaves.
 
 ### Observability
@@ -181,5 +181,5 @@ Rules beyond that come with the first release.
 - Every action has a cause.
   The tracer is keyed by cgroup, so each action is attributed to the command that caused it, however many processes that command spawned.
 - The log is one audit record per call, held outside the machine.
-  The operator reads it from the CLI, live during a run and after.
+  The operator reads it from the CLI, live during a job and after.
 - Cost per call is a first-release measurement.
