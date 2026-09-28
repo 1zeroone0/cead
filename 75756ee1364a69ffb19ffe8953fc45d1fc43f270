@@ -1,0 +1,15 @@
+# #10 comments
+
+## 1zeroone0 · 2026-09-28T01:14:27Z
+
+`d86898f`
+
+1. **Built** — CODE.md reorganized as Method (sequence, frontier/claim, boundaries) → Vocabulary (table with a Home column) → Rust / TLA+ / Lean (environment and idioms only). AGENTS.md: five line edits, one deletion. Cargo.toml lints, `clippy.toml`, clippy in the toolchain; README `done` → `finish`.
+2. **Why** — Languages were parallel sections; they are one pipeline, so method comes first and languages say only how they express it. `clippy.toml` over `cfg_attr(test, allow(...))`, because `allow_attributes` rejects the attribute form.
+3. **Bloat** — CODE.md is 24 bytes smaller despite adding the invariants, the method sequence and the table: the lint block that duplicated Cargo.toml is gone (Cargo.toml is the rule), and "every noun is a struct or enum" is absorbed by the Home rule.
+4. **Drift** — Moved out, to Horizon, not deleted: TLA+ candidates (fork–exec gap, log/snapshot/fork, budget tree) and Lean candidates (`Budget::split`, eviction, export round-trip, pinned-prompt renderer) go to the `initial-spec` comment; "first Lean spec is Budget" goes to the rlm-and-budget comment. The Lean project moves from `model/` to `spec/`.
+5. **Trust surface** — Checked on 1.98 in a scratch crate: `todo!()` warns; bare `#[allow]` and a reason-less `#[expect]` are errors; `#[expect(clippy::unreachable, reason)]` passes; unwrap in `#[cfg(test)]` passes with `clippy.toml`. Not checked: `allow-expect-in-tests`, by symmetry only.
+6. **How it breaks** — A lake project and TLA+ modules sharing `spec/` may collide once both exist. `#[ignore]` is still counted as frontier but no lint counts it; that is grep, not a checker.
+7. **Not confident** — The Home column's form (one column, free text) before any home exists. Whether "a fill commit names the action it implements" is practical when one body serves two actions.
+8. **Verify yourself** — CODE.md Method section as a whole; the frontier/claim lists in Rust › Idioms; AGENTS.md line on Horizon.
+9. **Next steps** — Finished pending your read; Horizon updates and `initial-spec` scoping continue on #7.
