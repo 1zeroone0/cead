@@ -160,8 +160,8 @@ Rules beyond that come with the first release.
   It is a sub-agent, built from process structure rather than at the application layer.
 - Forking, of the machine.
   A snapshot of a running machine boots another machine that diverges from the same state.
-- Done.
-  `done` ends a process with its answer; when the root process is done, the run is over and the machine is gone.
+- Finish.
+  `finish` ends a process with its answer; when the root process finishes, the run is over and the machine is gone.
 
 ### Data
 
