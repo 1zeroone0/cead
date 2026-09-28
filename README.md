@@ -28,7 +28,7 @@ Three contracts; everything between two lines is swappable.
 
 | Line | Contract |
 |---|---|
-| backend ↔ guest | boot protocol and virtio |
+| backend ↔ machine | boot protocol and virtio |
 | kernel ↔ commands | Linux syscall ABI |
 | commands ↔ model | POSIX sh, GNU flags and error text |
 
@@ -134,12 +134,13 @@ Work fans out three ways, told apart by who spawns and when:
 - Authority is per tool: how far a tool can go beyond what its command line says.
   `grep` does only what its arguments say; `python` can do anything the process may.
   The class picks the tool's kernel policy and says how to read its trace.
-- The host is out of reach.
-  API keys, the grader and the log stay on the host.
+- The host is out of reach, and trusted.
+  API keys and the grader stay on the host; the log is held outside the machine.
+  cead trusts the host's operator and hardware.
 
 ### Hardware
 
-Two backends boot the same guest and leave the same evidence: Firecracker on Linux, Virtualization.framework on macOS.
+Two backends boot the same machine and leave the same evidence: Firecracker on Linux, Virtualization.framework on macOS.
 The host needs a hypervisor and nothing else.
 
 ### Network
@@ -179,6 +180,6 @@ Rules beyond that come with the first release.
 - eBPF records what the model's processes do: which programs they start, which files they read, and each call to the model endpoint.
 - Every action has a cause.
   The observer is keyed by cgroup, so each action is attributed to the command that caused it, however many processes that command spawned.
-- The log is one entry per command, written on the host.
+- The log is one receipt per command, held outside the machine.
   The operator reads it from the CLI, live during a run and after.
 - Cost per command is a first-release measurement.
