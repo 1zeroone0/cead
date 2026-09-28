@@ -60,7 +60,7 @@ System diagram to come with the first release.
 
 Install instructions come with the first release.
 
-A manifest is one file that names a machine: kernel, task image, policy, VMM, and model endpoint.
+A manifest is one file that names a machine: kernel, task image, policy, VMM, and the model: its weights and engine.
 Two ways to run it:
 
 - `cead` boots the machine the manifest describes and opens a shell over it.
@@ -78,7 +78,7 @@ What a job does, from manifest to first command:
 3. init mounts one filesystem: the task image as root, the core first on PATH, and each descriptor (context on stdin, checkout, scratch, database file).
 4. The harness forks the root process, attaches the policy, drops to an unprivileged uid, and execs the shell.
    Every child inherits the policy; no process can remove it.
-5. The harness renders the system prompt from what it mounted, so it cannot claim what is not there, and sends it with the query to the model endpoint.
+5. The harness renders the system prompt from what it mounted, so it cannot claim what is not there, and sends it with the query to the engine.
 6. The model writes its first command.
 
 Three kinds of file, three fates:
@@ -105,7 +105,7 @@ Example run and screen recording to come with the first release.
 ## Deployment
 
 The machine runs wherever the cead CLI runs: a laptop or a cloud VM with a hypervisor.
-The model runs wherever the manifest's endpoint is: a hosted API or a local server.
+The model runs wherever the manifest's engine is: a hosted API or a local server.
 The CLI drives everything below: it reads the manifest, boots, runs, snapshots, forks, and reads the log.
 
 The machine is the unit of scale.
@@ -135,7 +135,7 @@ Work fans out three ways, told apart by who spawns and when:
   `grep` does only what its arguments say; `python` can do anything the process may.
   The class picks the tool's kernel policy and says how to read its trace.
 - The host is out of reach, and trusted.
-  API keys and the grader stay on the host; the log is held outside the machine.
+  The grader stays on the host, API keys never reach the model's processes, and the log is held outside the machine.
   cead trusts the host's operator and hardware.
 
 ### Hardware
@@ -146,7 +146,8 @@ The host needs a hypervisor and nothing else.
 ### Network
 
 The model's processes have no network.
-The machine reaches the host over vsock only, through a proxy, for inference and for the log.
+The machine reaches the host over vsock only.
+The host relays inference, encrypted between the harness and the engine, and the machine's messages to the log.
 Rules beyond that come with the first release.
 
 ### Workloads
@@ -154,7 +155,7 @@ Rules beyond that come with the first release.
 - Build time.
   A task's tools are packed into a read-only OCI image; a SWE-bench instance image works as is.
 - Each call.
-  The harness assembles the context window from the system prompt, the query and the bounded output of every command so far, and sends it to the model endpoint.
+  The harness assembles the context window from the system prompt, the query and the bounded output of every command so far, and sends it to the engine.
   It runs the command that comes back and adds the output, cut at a size cap, to the window; the full output goes to a file the model can read piecewise.
 - Recursion, inside the machine.
   `rlm` starts a child process with a slice of the parent's context, a meter under its parent's, the same tools, and its own context window.
@@ -177,7 +178,7 @@ Rules beyond that come with the first release.
 
 ### Observability
 
-- eBPF records what the model's processes do: which programs they start, which files they read, and each request to the model endpoint.
+- eBPF records what the model's processes do: which programs they start, which files they read, and each request to the engine.
 - Every action has a cause.
   The tracer is keyed by cgroup, so each action is attributed to the command that caused it, however many processes that command spawned.
 - The log is one audit record per call, held outside the machine.
