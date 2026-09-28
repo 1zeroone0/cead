@@ -1,0 +1,49 @@
+# #3 comments
+
+## 1zeroone0 · 2026-09-26T22:42:01Z
+
+1. **Built** — accents recolored in three PNGs: pixel blend-solve against the ground, then re-blend with the new accent; hex labels spliced from existing glyphs.
+2. **Why** — flag hues, muted chroma, deeper per review. Rejected: a generator script (maintenance with no source to generate from); re-rendering labels with a guessed font.
+3. **Bloat** — lockup's second iron merged into one.
+4. **Drift** — palette.png is the only place hex values live; updated.
+5. **Trust surface** — checked by pixel diff (changes confined to accent regions, no old accent left) and by eye at zoom. No automated check.
+6. **How it breaks** — GitHub dark mode: green on dark ground is low contrast (2.5:1). Future edits need the same one-off approach until there's a vector source.
+7. **Not confident** — merging the lockup's darker iron; green lightness on dark grounds.
+8. **Verify yourself** — README lockup in GitHub dark mode; `cead` green in terminal-mockup.png.
+9. **Next steps** — finished pending hue approval.
+
+## 1zeroone0 · 2026-09-26T23:19:34Z
+
+1. **Built** — in `lockup.png`, the stem rows under the green *a* stroke are painted with the stroke's own column, composited over the stem so the edges keep their antialiasing.
+2. **Why** — the accent stroke should read as one continuous mark; white *e* strokes merge with the white stem, so only the green one needed it.
+3. **Bloat** — none added; one file changed.
+4. **Drift** — PR description updated.
+5. **Trust surface** — checked by eye at 4× zoom on a dark ground. Only rows 170–189, columns 588–611 changed.
+6. **How it breaks** — the orange *d* strokes sit above the stem and touch it; they were not changed. If you want those in front too, same fix.
+7. **Not confident** — nothing specific.
+8. **Verify yourself** — the lockup on the README in GitHub dark mode.
+9. **Next steps** — finished; ready for review.
+
+## 1zeroone0 · 2026-09-26T23:39:29Z
+
+1. **Built** — the Ogham row of `lockup.png` redrawn from measured geometry: stem trimmed and centered, feather marks drawn supersampled and composited over; `lockup-light.png` is the same drawing with stone mapped to ink; README switches between them with `<picture>`.
+2. **Why** — option A (keep Ogham's rhythm) over aligning groups to Latin letters, which would break the script's even spacing. Feathers: historically accurate for the manuscript line, and they read like a cursor.
+3. **Bloat** — one new asset, required for light mode; no scripts committed.
+4. **Drift** — PR description rewritten to the current scope; lockup-source and the mockup's small mark noted as not updated.
+5. **Trust surface** — checked by eye on GitHub's dark (#0d1117) and white grounds; zero stone pixels remain in the light variant. `<picture>` rendering on GitHub not yet seen.
+6. **How it breaks** — GitHub mobile or other renderers that ignore `<source media>` fall back to the dark variant, which is invisible on white.
+7. **Not confident** — feather size and angle; stem length (feather tips extend 20 px past the lettering).
+8. **Verify yourself** — the PR's README preview in both GitHub themes.
+9. **Next steps** — finished; ready for review.
+
+## 1zeroone0 · 2026-09-26T23:47:57Z
+
+1. **Built** — four SVG lockups (mark from its grid, letters traced with potrace at 4× from the old raster); palette and terminal mockup regenerated in Fira Code.
+2. **Why** — SVG makes the lockup its own source, which ends the raster patching; PNG stays for the two text mockups.
+3. **Bloat** — three PNG lockups deleted; four SVGs added, each a distinct use (dark, light, mono source, color source).
+4. **Drift** — mockup vocabulary aligned with CODE.md and #8; README points at the SVGs.
+5. **Trust surface** — each SVG rasterized with resvg and checked by eye on GitHub's dark and white grounds. Not seen on GitHub itself.
+6. **How it breaks** — traced letters are a close approximation, not the original font; a renderer ignoring `<source media>` shows the dark lockup on white.
+7. **Not confident** — palette descriptions' wording; whether the stone-only header mark in the mockup is what you meant for terminals.
+8. **Verify yourself** — the README preview in both themes; `terminal-mockup.png`.
+9. **Next steps** — finished; ready for review.
