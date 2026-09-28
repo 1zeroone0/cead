@@ -135,7 +135,7 @@ Work fans out three ways, told apart by who spawns and when:
   `grep` does only what its arguments say; `python` can do anything the process may.
   The class picks the tool's kernel policy and says how to read its trace.
 - The host is out of reach, and trusted.
-  The grader stays on the host, API keys never reach the model's processes, and the log is held outside the machine.
+  The grader and long-lived API keys stay on the host; the machine holds only a token scoped to its job, and the log is held outside the machine.
   cead trusts the host's operator and hardware.
 
 ### Hardware

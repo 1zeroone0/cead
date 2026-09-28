@@ -62,7 +62,7 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 | manifest | The one file that pins a machine by content. Equal manifests are the same experiment; its hashes are the version vector. | |
 | message | One link of the machine's chain in transit to the log. Can be lost, delayed, reordered, duplicated or forged; the log accepts only what the machine signed. | `spec/cead.tla` |
 | meter | What a process tree may spend, from KeyKOS. A child's meter hangs below its parent's; every spend is charged to each meter above it, so a tree never outspends its root. A parent can cap or revoke a child's meter. What it counts is manifest policy. | |
-| model | The machine's user: weights running on an engine, reached by the harness over TLS that every host between only relays. Keys never reach the model's processes. |  |
+| model | The machine's user: weights running on an engine, reached by the harness over TLS that every host between only relays. The machine holds only a job-scoped token, never a long-lived key. |  |
 | operator | The human at depth 0. Types `cead` or `cead run`; never types a call. | |
 | pinned | The part of the window eviction never touches: the system prompt. | |
 | policy | The rows of the call table in Cedar, compiled to seccomp and Landlock, installed before exec. Permit-all is a declared policy, not an absence. | |
