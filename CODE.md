@@ -33,42 +33,42 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 
 | Noun | Meaning | Home |
 |---|---|---|
-| cead | The project, the operator's binary, and its shell over a declaration and its state. | crate and binary `cead` |
-| operator | The human at depth 0. Types `cead` or `cead run`; never types a call. | |
-| machine | The unit: pinned kernel, core, task image, descriptors, calls, policy and model endpoint, booted in a microVM by a backend. | |
-| declaration | The one file that pins a machine. Equal declarations are the same experiment; its hashes are the version vector. | |
+| authority | How far a binary can go beyond its argv: fixed, launcher, client, interpreter, service. | |
 | backend | What boots a machine: Firecracker on Linux, Virtualization.framework on macOS. Same guest, same evidence. | |
-| init | PID 1 in the guest. Assembles the view (task image as root, overlay, core first on PATH, descriptors), applies policy, execs the harness. | |
-| harness | The Rust program in the machine, its memory manager. Runs each process's cycle, installs kernel policy in the fork-exec gap, supplies the calls, writes receipts. | |
-| process | One harness cycle with its own cgroup, window, shell, limits and budget. Started by `run` at depth 0 or by `rlm` below it. | |
-| run | One machine, one root process and its tree, one log. From the operator shell or one-shot `cead run`; the machine ends with it. | |
-| step | One command and its observation. The unit of budget and of measurement. | |
-| window | The context the model can address now. A cache over state. | |
-| pinned | The part of the window eviction never touches: the system prompt. | |
 | bounded | Output admitted to the window, constructible only by truncation. The remainder **spills** to a file. | |
-| limit | A cap on one process: window size, bound, steps, wall time. The rlimit analogue: set in the fork-exec gap, inherited as a copy. | |
 | budget | What a process tree may spend. A parent moves part of what remains into each child, never copies it. What it counts is declaration policy. | |
-| slice | The bytes a child receives on stdin, sealed. | |
-| descriptor | State the model holds this session, bound to an object with rights. Minted by cead, never discovered; a capability. A child's is **attenuated**. | |
-| command | What the model writes: shell over the core plus the task image. | |
-| core | The invariant tools every machine has: brush, uutils, grep, git, sqlite3. nix-built, static, first on PATH. | |
-| task image | The tools one task brings: a read-only OCI image with a label declaring its tools, attached at boot. | |
-| query | The argv of `run` or `rlm`, commit-message sized. Anything longer is context. | |
 | call | A command whose effect is on the harness: `rlm`, `finish`. | |
 | call table | The single source; renders builtins, exec policy, prompt lines, man pages. | |
-| membrane | The calls as boundary: untyped argv and stdin in, typed request inside, text and exit code out. | |
-| rights | What a call may do to state: read, write. | |
-| authority | How far a binary can go beyond its argv: fixed, launcher, client, interpreter, service. | |
-| policy | The rows of the call table in Cedar, compiled to seccomp and Landlock, installed before exec. Permit-all is a declared policy, not an absence. | |
-| verdict | The adjudication of a command: permit or forbid. | |
-| observer | eBPF keyed by cgroup, outside the model's reach. | |
-| receipt | One record per command, three streams under one invocation id: intent, adjudication, witness. | |
-| log | The append-only sequence of receipts, a flat file on the host. A finished run cites its hash. | |
-| snapshot | The whole guest at an instant. The fork mechanism. | |
-| model endpoint | Where inference is, reached only through the host proxy; keys never enter the guest. | |
+| cead | The project, the operator's binary, and its shell over a declaration and its state. | crate and binary `cead` |
+| command | What the model writes: shell over the core plus the task image. | |
 | contract | One of the three lines everything else is swappable between. | |
-| ring | A privilege layer: model processes; harness and observer; host. | |
+| core | The invariant tools every machine has: brush, uutils, grep, git, sqlite3. nix-built, static, first on PATH. | |
+| declaration | The one file that pins a machine. Equal declarations are the same experiment; its hashes are the version vector. | |
+| descriptor | State the model holds this session, bound to an object with rights. Minted by cead, never discovered; a capability. A child's is **attenuated**. | |
 | evict | Dispose at any tier: window span, KV block, process, machine. | |
+| harness | The Rust program in the machine, its memory manager. Runs each process's cycle, installs kernel policy in the fork-exec gap, supplies the calls, writes receipts. | |
+| init | PID 1 in the guest. Assembles the view (task image as root, overlay, core first on PATH, descriptors), applies policy, execs the harness. | |
+| limit | A cap on one process: window size, bound, steps, wall time. The rlimit analogue: set in the fork-exec gap, inherited as a copy. | |
+| log | The append-only sequence of receipts, a flat file on the host. A finished run cites its hash. | |
+| machine | The unit: pinned kernel, core, task image, descriptors, calls, policy and model endpoint, booted in a microVM by a backend. | |
+| membrane | The calls as boundary: untyped argv and stdin in, typed request inside, text and exit code out. | |
+| model endpoint | Where inference is, reached only through the host proxy; keys never enter the guest. | |
+| observer | eBPF keyed by cgroup, outside the model's reach. | |
+| operator | The human at depth 0. Types `cead` or `cead run`; never types a call. | |
+| pinned | The part of the window eviction never touches: the system prompt. | |
+| policy | The rows of the call table in Cedar, compiled to seccomp and Landlock, installed before exec. Permit-all is a declared policy, not an absence. | |
+| process | One harness cycle with its own cgroup, window, shell, limits and budget. Started by `run` at depth 0 or by `rlm` below it. | |
+| query | The argv of `run` or `rlm`, commit-message sized. Anything longer is context. | |
+| receipt | One record per command, three streams under one invocation id: intent, adjudication, witness. | |
+| rights | What a call may do to state: read, write. | |
+| ring | A privilege layer: model processes; harness and observer; host. | |
+| run | One machine, one root process and its tree, one log. From the operator shell or one-shot `cead run`; the machine ends with it. | |
+| slice | The bytes a child receives on stdin, sealed. | |
+| snapshot | The whole guest at an instant. The fork mechanism. | |
+| step | One command and its observation. The unit of budget and of measurement. | |
+| task image | The tools one task brings: a read-only OCI image with a label declaring its tools, attached at boot. | |
+| verdict | The adjudication of a command: permit or forbid. | |
+| window | The context the model can address now. A cache over state. | |
 
 # Rust
 
