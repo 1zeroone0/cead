@@ -1,0 +1,13 @@
+# #6 comments
+
+## 1zeroone0 · 2026-09-26T23:52:30Z
+
+1. **Built** — one AGENTS.md line: fold durable comment findings into the description before ready. Repo squash setting switched to PR title and body.
+2. **Why** — #5 landed with only its title: the squash used commit messages, not the description, contrary to AGENTS.md.
+3. **Bloat** — one line; no new file or process.
+4. **Drift** — AGENTS.md's "descriptions become the squash-commit body" is now true in the repo setting.
+5. **Trust surface** — setting verified via the API; not yet seen on an actual merge.
+6. **How it breaks** — the rule depends on the agent doing the fold; nothing checks it.
+7. **Not confident** — whether the Claude Code footer in PR bodies should land in commit bodies.
+8. **Verify yourself** — the next squash commit on main after you land one.
+9. **Next steps** — finished; ready for review.
