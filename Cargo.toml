@@ -8,6 +8,11 @@ unreachable_pub = "warn"
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
 
 [package]
 name = "cead"
