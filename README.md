@@ -24,11 +24,11 @@ The context window is a cache; the model's state lives in the machine, in files,
 A script that stands up a service, runs forty commands and prints `ok` has advanced the task by forty commands and cost the context window one line.
 All forty ran under kernel policy and were recorded, whether or not the model mentioned them.
 
-Three contracts; everything between two lines is swappable.
+Three interfaces; everything between two lines is swappable.
 
-| Line | Contract |
+| Line | Interface |
 |---|---|
-| backend ↔ machine | boot protocol and virtio |
+| VMM ↔ machine | boot protocol and virtio |
 | kernel ↔ commands | Linux syscall ABI |
 | commands ↔ model | POSIX sh, GNU flags and error text |
 
@@ -60,19 +60,19 @@ System diagram to come with the first release.
 
 Install instructions come with the first release.
 
-A declaration is one file that names a machine: kernel, task image, policy, backend, and model endpoint.
+A manifest is one file that names a machine: kernel, task image, policy, VMM, and model endpoint.
 Two ways to run it:
 
-- `cead` boots the machine the declaration describes and opens a shell over it.
+- `cead` boots the machine the manifest describes and opens a shell over it.
   Each command in that shell is one operator verb; `run` starts the model.
 - `cead run` does one run from your own shell and returns.
   argv is the query, stdin is the context, stdout is the answer, and the exit code is the outcome.
 
 A query is the length of a commit message; anything longer is a file in the machine for the model to read.
 
-What a run does, from declaration to first command:
+What a run does, from manifest to first command:
 
-1. The backend boots one kernel and attaches two read-only disks: the core (cead's tools, policy and eBPF programs, built by nix) and the task image.
+1. The VMM boots one kernel and attaches two read-only disks: the core (cead's tools, policy and eBPF programs, built by nix) and the task image.
 2. init runs as root, before any model process exists.
    It loads the eBPF programs into the kernel and compiles the policy into a seccomp filter and a Landlock ruleset.
 3. init mounts one filesystem: the task image as root, the core first on PATH, and each descriptor (context on stdin, checkout, scratch, database file).
@@ -99,21 +99,21 @@ Example run and screen recording to come with the first release.
 | kernel | Linux: cgroup v2, seccomp, Landlock, vsock; eBPF via aya |
 | shell and tools | brush, uutils, SQLite |
 | policy | Cedar |
-| backends | Firecracker on Linux, Virtualization.framework on macOS |
+| VMMs | Firecracker on Linux, Virtualization.framework on macOS |
 | images and build | OCI images, nix |
 
 ## Deployment
 
 The machine runs wherever the cead CLI runs: a laptop or a cloud VM with a hypervisor.
-The model runs wherever the declaration's endpoint is: a hosted API or a local server.
-The CLI drives everything below: it reads the declaration, boots, runs, snapshots, forks, and reads the log.
+The model runs wherever the manifest's endpoint is: a hosted API or a local server.
+The CLI drives everything below: it reads the manifest, boots, runs, snapshots, forks, and reads the log.
 
 The machine is the unit of scale.
 Work fans out three ways, told apart by who spawns and when:
 
 | Use | Who spawns | When | Mechanism |
 |---|---|---|---|
-| evals | operator | before the run | scale-out: N machines from one declaration |
+| evals | operator | before the run | scale-out: N machines from one manifest |
 | reinforcement learning | operator or trainer | mid-run, at a chosen state | fork: K machines from one snapshot, the way a git worktree forks a checkout |
 | long or autonomous tasks | the model | whenever it decides | `rlm`: a sub-agent process inside the machine |
 
@@ -124,8 +124,8 @@ Work fans out three ways, told apart by who spawns and when:
 
 - The machine is the boundary.
   Everything a run can touch is inside one disposable microVM, so the questions that usually need users, roles and sessions collapse to one: which machine.
-- A declaration answers it by hash.
-  Two machines with the same declaration are the same experiment.
+- A manifest answers it by hash.
+  Two machines with the same manifest are the same experiment.
 - Operator and model are told apart by where they stand.
   The operator runs the CLI on the host; the model runs inside the machine as an unprivileged user.
 - Access is granted; content is discovered.
@@ -140,7 +140,7 @@ Work fans out three ways, told apart by who spawns and when:
 
 ### Hardware
 
-Two backends boot the same machine and leave the same evidence: Firecracker on Linux, Virtualization.framework on macOS.
+Two VMMs boot the same machine and leave the same evidence: Firecracker on Linux, Virtualization.framework on macOS.
 The host needs a hypervisor and nothing else.
 
 ### Network
@@ -153,11 +153,11 @@ Rules beyond that come with the first release.
 
 - Build time.
   A task's tools are packed into a read-only OCI image; a SWE-bench instance image works as is.
-- Each step.
+- Each call.
   The harness assembles the context window from the system prompt, the query and the bounded output of every command so far, and sends it to the model endpoint.
-  It runs the command that comes back and adds the output, cut at a size cap, to the next step; the full output goes to a file the model can read piecewise.
+  It runs the command that comes back and adds the output, cut at a size cap, to the window; the full output goes to a file the model can read piecewise.
 - Recursion, inside the machine.
-  `rlm` starts a child process with a slice of the parent's context, part of its budget, the same tools, and its own context window.
+  `rlm` starts a child process with a slice of the parent's context, a meter under its parent's, the same tools, and its own context window.
   It is a sub-agent, built from process structure rather than at the application layer.
 - Forking, of the machine.
   A snapshot of a running machine boots another machine that diverges from the same state.
@@ -177,9 +177,9 @@ Rules beyond that come with the first release.
 
 ### Observability
 
-- eBPF records what the model's processes do: which programs they start, which files they read, and each call to the model endpoint.
+- eBPF records what the model's processes do: which programs they start, which files they read, and each request to the model endpoint.
 - Every action has a cause.
-  The observer is keyed by cgroup, so each action is attributed to the command that caused it, however many processes that command spawned.
-- The log is one receipt per command, held outside the machine.
+  The tracer is keyed by cgroup, so each action is attributed to the command that caused it, however many processes that command spawned.
+- The log is one audit record per call, held outside the machine.
   The operator reads it from the CLI, live during a run and after.
-- Cost per command is a first-release measurement.
+- Cost per call is a first-release measurement.
