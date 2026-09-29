@@ -622,22 +622,63 @@ pub(crate) mod bounded {
 
     /// Output admitted to the window only if it fits the bound; otherwise
     /// none of it, and the model reads the spill file like any other state.
+    #[derive(Debug, PartialEq, Eq)]
     pub(crate) enum Bounded {
         Fits(Vec<u8>),
         Spilled { path: PathBuf, size: u64 },
     }
 
     impl Bounded {
-        /// Admits `output` whole if it fits `bound`, else writes it under
-        /// `spill`.
+        /// Admits `output` whole if it fits `bound`, else writes it to `spill`.
         pub(crate) fn admit(output: Vec<u8>, bound: usize, spill: &Path) -> std::io::Result<Bounded> {
-            todo!()
+            if output.len() <= bound {
+                return Ok(Bounded::Fits(output));
+            }
+            std::fs::write(spill, &output)?;
+            Ok(Bounded::Spilled { path: spill.to_path_buf(), size: output.len() as u64 })
         }
 
-        /// The bytes the call returns: the exit status, then the output or
-        /// the spill's path and size.
+        /// The bytes the call returns: the output then its exit status, or the
+        /// exit status with the spill's size and path. The same shape on every
+        /// task.
         pub(crate) fn returned(&self, status: &WaitStatus) -> Vec<u8> {
-            todo!()
+            let status = match status {
+                WaitStatus::Exited(code) => format!("exit {code}"),
+                WaitStatus::Signaled(signal) => format!("signal {signal}"),
+            };
+            match self {
+                Bounded::Fits(output) => {
+                    let mut out = output.clone();
+                    if !out.is_empty() && !out.ends_with(b"\n") {
+                        out.push(b'\n');
+                    }
+                    out.extend_from_slice(status.as_bytes());
+                    out
+                }
+                Bounded::Spilled { path, size } => {
+                    format!("{status} · {size} bytes → {}", path.display()).into_bytes()
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::Bounded;
+        use crate::record::WaitStatus;
+
+        /// Output at the bound enters whole; one byte more enters not at all,
+        /// and the spill file holds every byte.
+        #[test]
+        fn all_or_nothing() {
+            let spill = std::env::temp_dir().join(format!("cead-spill-{}", std::process::id()));
+            let fits = Bounded::admit(b"abcd".to_vec(), 4, &spill).expect("admit");
+            assert_eq!(fits.returned(&WaitStatus::Exited(0)), b"abcd\nexit 0");
+            let over = Bounded::admit(b"abcde".to_vec(), 4, &spill).expect("admit");
+            assert_eq!(std::fs::read(&spill).expect("spilled"), b"abcde");
+            let returned = String::from_utf8(over.returned(&WaitStatus::Signaled(9))).expect("utf-8");
+            assert_eq!(returned, format!("signal 9 · 5 bytes → {}", spill.display()));
+            assert_eq!(Bounded::admit(vec![], 0, &spill).expect("admit").returned(&WaitStatus::Exited(1)), b"exit 1");
         }
     }
 }
