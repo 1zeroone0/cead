@@ -1,0 +1,15 @@
+# #12 comments
+
+## 1zeroone0 · 2026-09-29T06:07:09Z
+
+`3512a45`
+
+1. **Built** — AGENTS.md: one rule added to the wall paragraph (evidence outranks every artifact); the first-commit rule restated for a spec that exists. CODE.md: three aged lines removed, two TLA+ practices added, Lean's gate made per function.
+2. **Why** — #11 was the method's first practice. Lines that described the method's state ("unpracticed", "before any Rust exists", "the first Lean PR") would drift; practices it proved (a mutation per property, fast committed cfgs, receipt runs in the PR) were written nowhere.
+3. **Bloat** — CODE.md's "when code disagrees with it, the spec changes in that PR" folded into the general rule in AGENTS.md: said once.
+4. **Drift** — Three time-bound statements removed; nothing points outside its file.
+5. **Trust surface** — Prose.
+6. **How it breaks** — "Evidence outranks every artifact" can be read as licence to change a spec whenever code is inconvenient; the wall paragraph above it (re-derive, never patch) is what bounds it.
+7. **Not confident** — "about a minute" for committed cfgs is a number from one PR.
+8. **Verify yourself** — The two AGENTS.md lines.
+9. **Next steps** — Finished: all merge requirements met, ready for review.
