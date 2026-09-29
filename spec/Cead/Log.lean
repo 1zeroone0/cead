@@ -22,20 +22,20 @@ def Body.isExit : Body → Bool
   | _ => false
 
 /-- The boot a report recovers, if it is a recovery. -/
-def Body.recovers : Body → Option Blob
+def Body.recovers : Body → Option Boot
   | .report (.recovery b _) .. => some b
   | _ => none
 
 section
 variable (log : Log)
 
-def Logged (b : Blob) (s : UInt64) : Prop := ∃ r ∈ log, r.boot = b ∧ r.seq = s
+def Logged (b : Boot) (s : UInt64) : Prop := ∃ r ∈ log, r.boot = b ∧ r.seq = s
 
-def Vouched (b : Blob) : Prop := Logged log b 1
+def Vouched (b : Boot) : Prop := Logged log b 1
 
-def Exited (b : Blob) : Prop := ∃ r ∈ log, r.boot = b ∧ r.body.isExit
+def Exited (b : Boot) : Prop := ∃ r ∈ log, r.boot = b ∧ r.body.isExit
 
-def Recovered (b : Blob) : Prop := ∃ r ∈ log, r.body.recovers = some b
+def Recovered (b : Boot) : Prop := ∃ r ∈ log, r.body.recovers = some b
 
 instance : Decidable (Logged log b s) := by unfold Logged; infer_instance
 instance : Decidable (Vouched log b) := by unfold Vouched; infer_instance
@@ -70,7 +70,7 @@ def accept (log : Log) (r : Record) : Option Log :=
   if ¬ Logged log r.boot r.seq ∧ Admits log r then some (log ++ [r]) else none
 
 /-- The snapshot a fork or recovery booted from. -/
-def Body.source : Body → Option (Blob × UInt64)
+def Body.source : Body → Option (Boot × UInt64)
   | .report (.fork b l) .. | .report (.recovery b l) .. => some (b, l)
   | _ => none
 
@@ -95,7 +95,7 @@ theorem valid_nil : Valid [] := by
   constructor <;> simp [Exited]
 
 section Proofs
-variable {log : Log} {r : Record} {b : Blob} {s : UInt64}
+variable {log : Log} {r : Record} {b : Boot} {s : UInt64}
 
 private theorem logged_append (h : Logged log b s) : Logged (log ++ [r]) b s := by
   obtain ⟨x, hx, h⟩ := h; exact ⟨x, by simp [hx], h⟩

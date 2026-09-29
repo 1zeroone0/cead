@@ -20,6 +20,11 @@ def blob : IO Blob := do
   let data ← (List.range n).mapM fun _ => byte
   if h : data.length < UInt64.size then return ⟨data, h⟩ else return ⟨[], by decide⟩
 
+/-- A key or digest: 32 random bytes. -/
+def fixed32 : IO (Fixed 32) := do
+  let data ← (List.range 32).mapM fun _ => byte
+  if h : data.length = 32 then return ⟨data, h⟩ else return ⟨List.replicate 32 0, by simp⟩
+
 def u64 : IO UInt64 := do
   -- small values exercise the low bytes, large ones the high
   if (← IO.rand 0 1) = 0 then return (← IO.rand 0 1000).toUInt64
@@ -28,8 +33,8 @@ def u64 : IO UInt64 := do
 def origin : IO Origin := do
   match ← IO.rand 0 2 with
   | 0 => return .run
-  | 1 => return .fork (← blob) (← u64)
-  | _ => return .recovery (← blob) (← u64)
+  | 1 => return .fork (← fixed32) (← u64)
+  | _ => return .recovery (← fixed32) (← u64)
 
 def event : IO Event := do
   match ← IO.rand 0 2 with
@@ -42,7 +47,7 @@ def event : IO Event := do
   | _ =>
     let code ← byte
     let status := if (← IO.rand 0 1) = 0 then WaitStatus.exited code else .signaled code
-    return .witness status (← blob) (← blob)
+    return .witness status (← fixed32) (← blob)
 
 def body : IO Body := do
   match ← IO.rand 0 2 with
@@ -53,12 +58,12 @@ def body : IO Body := do
   | 1 => return .call (← u64) (← u64) (← event)
   | _ =>
     match ← IO.rand 0 3 with
-    | 0 => return .exit (.finish (← blob))
+    | 0 => return .exit (.finish (← fixed32))
     | 1 => return .exit .meter
     | 2 => return .exit .limit
     | _ => return .exit .timeout
 
-def record : IO Record := return ⟨← blob, ← u64, ← body⟩
+def record : IO Record := return ⟨← fixed32, ← u64, ← body⟩
 
 /-- A valid encoding, or one corrupted: a byte changed, cut short, or extended. -/
 def recordBytes : IO Bytes := do
@@ -122,7 +127,7 @@ def replay (path : String) (boot : String) (proc : Nat) : IO UInt32 := do
     | IO.eprintln "a line is not a record"; return 65
   let some b := unhex boot
     | IO.eprintln "boot is not hex"; return 64
-  if h : b.length < UInt64.size then
+  if h : b.length = 32 then
     match Cead.replay log ⟨b, h⟩ proc.toUInt64 with
     | some spans =>
       for sp in spans do

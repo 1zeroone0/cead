@@ -38,7 +38,7 @@ theorem window_prefix (prompt query : Blob) (calls more : List (Blob × Blob)) :
 def Root : UInt64 := 0
 
 section Replay
-variable (log : Log) (b : Blob)
+variable (log : Log) (b : Boot)
 
 /-- The pinned prompt and the root's query, from boot `b`'s report. -/
 def reportOf : Option (Blob × Blob) :=

@@ -9,12 +9,18 @@ namespace Cead
 
 open Codec
 
+/-- A boot, named by its public key, which signs its records. -/
+abbrev Boot := Fixed 32
+
+/-- A SHA-256 digest. -/
+abbrev Digest := Fixed 32
+
 /-- What started a boot. A fork or recovery names its snapshot: that boot
 and its last record. -/
 inductive Origin where
   | run
-  | fork (boot : Blob) (last : UInt64)
-  | recovery (boot : Blob) (last : UInt64)
+  | fork (boot : Boot) (last : UInt64)
+  | recovery (boot : Boot) (last : UInt64)
 deriving DecidableEq
 
 /-- What the processor signed about a boot. `unattested` is what trusted-host
@@ -49,13 +55,13 @@ inductive Event where
   /-- `output` is the digest of the command's whole output; `returned` what the
   call returned to the model: the output if it fit the bound, else where it
   spilled. -/
-  | witness (status : WaitStatus) (output : Blob) (returned : Blob)
+  | witness (status : WaitStatus) (output : Digest) (returned : Blob)
 deriving DecidableEq
 
 /-- Why a boot ended: the root process's status. Only `finish` has a reply,
 and the record carries its digest. -/
 inductive Exit where
-  | finish (reply : Blob)
+  | finish (reply : Digest)
   | meter
   | limit
   | timeout
@@ -74,20 +80,20 @@ deriving DecidableEq
 /-- `boot` is the boot's public key, which signs the record; `seq` its place
 in the boot's sequence, the report first. -/
 structure Record where
-  boot : Blob
+  boot : Boot
   seq : UInt64
   body : Body
 deriving DecidableEq
 
 namespace Codec
 
-def blobU64 : Codec (Blob × UInt64) := pair blob u64
+def bootU64 : Codec (Boot × UInt64) := pair (fixed 32) u64
 
 private def OriginT : Fin 3 → Type
-  | 0 => Unit | 1 => Blob × UInt64 | 2 => Blob × UInt64
+  | 0 => Unit | 1 => Boot × UInt64 | 2 => Boot × UInt64
 
 def origin : Codec Origin :=
-  iso (tagged 3 (by decide) OriginT fun | 0 => unit | 1 => blobU64 | 2 => blobU64)
+  iso (tagged 3 (by decide) OriginT fun | 0 => unit | 1 => bootU64 | 2 => bootU64)
     (fun | ⟨0, _⟩ => .run | ⟨1, (b, l)⟩ => .fork b l | ⟨2, (b, l)⟩ => .recovery b l)
     (fun | .run => ⟨0, ()⟩ | .fork b l => ⟨1, (b, l)⟩ | .recovery b l => ⟨2, (b, l)⟩)
     (by rintro ⟨i, x⟩; match i, x with | 0, () => rfl | 1, (_, _) => rfl | 2, (_, _) => rfl)
@@ -129,11 +135,11 @@ def waitStatus : Codec WaitStatus :=
     (by intro e; cases e <;> rfl)
 
 private def EventT : Fin 3 → Type
-  | 0 => Blob × Blob | 1 => Decision | 2 => WaitStatus × Blob × Blob
+  | 0 => Blob × Blob | 1 => Decision | 2 => WaitStatus × Digest × Blob
 
 def event : Codec Event :=
   iso (tagged 3 (by decide) EventT
-        fun | 0 => pair blob blob | 1 => decision | 2 => pair waitStatus (pair blob blob))
+        fun | 0 => pair blob blob | 1 => decision | 2 => pair waitStatus (pair (fixed 32) blob))
     (fun | ⟨0, (t, c)⟩ => .intent t c | ⟨1, d⟩ => .decision d
          | ⟨2, (w, o, m)⟩ => .witness w o m)
     (fun | .intent t c => ⟨0, (t, c)⟩ | .decision d => ⟨1, d⟩
@@ -143,10 +149,10 @@ def event : Codec Event :=
     (by intro e; cases e <;> rfl)
 
 private def ExitT : Fin 4 → Type
-  | 0 => Blob | 1 => Unit | 2 => Unit | 3 => Unit
+  | 0 => Digest | 1 => Unit | 2 => Unit | 3 => Unit
 
 def exit : Codec Exit :=
-  iso (tagged 4 (by decide) ExitT fun | 0 => blob | 1 => unit | 2 => unit | 3 => unit)
+  iso (tagged 4 (by decide) ExitT fun | 0 => fixed 32 | 1 => unit | 2 => unit | 3 => unit)
     (fun | ⟨0, r⟩ => .finish r | ⟨1, _⟩ => .meter | ⟨2, _⟩ => .limit | ⟨3, _⟩ => .timeout)
     (fun | .finish r => ⟨0, r⟩ | .meter => ⟨1, ()⟩ | .limit => ⟨2, ()⟩ | .timeout => ⟨3, ()⟩)
     (by rintro ⟨i, x⟩; match i, x with | 0, _ => rfl | 1, () => rfl | 2, () => rfl | 3, () => rfl)
@@ -168,7 +174,7 @@ def body : Codec Body :=
     (by intro b; cases b <;> rfl)
 
 def record : Codec Record :=
-  iso (pair blob (pair u64 body))
+  iso (pair (fixed 32) (pair u64 body))
     (fun (b, s, x) => ⟨b, s, x⟩)
     (fun r => (r.boot, r.seq, r.body))
     (fun _ => rfl)

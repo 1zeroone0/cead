@@ -21,6 +21,12 @@ structure Blob where
   fits : data.length < UInt64.size
 deriving DecidableEq
 
+/-- Exactly `n` bytes: a key or a digest. -/
+structure Fixed (n : Nat) where
+  data : Bytes
+  len : data.length = n
+deriving DecidableEq
+
 namespace Codec
 
 /-- Equal encodings mean equal values. -/
@@ -138,6 +144,18 @@ def blob : Codec Blob where
         have := u64.enc_dec _ _ _ hn
         simp [List.length_take, Nat.min_eq_left ‹n.toNat ≤ r.length›, List.append_assoc, this]
       · cases hd
+
+/-- The `n` bytes as they are: their length says where they end. -/
+def fixed (n : Nat) : Codec (Fixed n) where
+  enc b := b.data
+  dec bs := if h : n ≤ bs.length then some (⟨bs.take n, by simp; omega⟩, bs.drop n) else none
+  dec_enc b rest := by
+    have := b.len
+    simp [this, List.take_left', List.drop_left']
+  enc_dec bs b rest hd := by
+    split at hd
+    · cases hd; simp
+    · cases hd
 
 def pair (ca : Codec α) (cb : Codec β) : Codec (α × β) where
   enc p := ca.enc p.1 ++ cb.enc p.2
