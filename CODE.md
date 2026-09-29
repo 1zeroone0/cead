@@ -29,7 +29,7 @@ Spec, skeleton, fill. TLA+, Lean and Rust are one pipeline, not alternatives: TL
 
 # Vocabulary
 
-Every noun has one home in code: a type, a module, or a subcommand. A noun may precede its home; the PR that first needs it builds it. No home without a noun, and no type without a row here. Paths are from `src/`; a type's errors and states sit in its row.
+Every noun has one home in code: a type, a module, or a subcommand. A noun may precede its home; the PR that first needs it builds it. No home without a noun, and no type outside tests without a row here. Paths are from `src/`; a type's errors and states sit in its row.
 
 | Noun | Meaning | In code |
 |---|---|---|
@@ -40,7 +40,7 @@ Every noun has one home in code: a type, a module, or a subcommand. A noun may p
 | availability | The job runs and ends. The host guarantees it, and can always deny it. | `spec/cead.tla` |
 | blocked | A process waiting: on its intent's decision, its command's end, or a foreground child. Holds the model's turn until the call returns. | `machine::process::Blocked` |
 | boot | One life of a machine's kernel, from the VMM starting it to eviction, with one key, which names it. Its records are numbered from its report, each signed with that key. **Complete** when the log holds its records through its exit record with no gap; otherwise **unknown** (crash, host kill, lost report). Linux's `boot_id`. | `record::Boot`; `spec/cead.tla` |
-| bounded | What a call returns: the output whole if it fits the bound, else none of it and where it **spilled**, a file the model reads like any other state. Nothing is truncated. | `machine::bounded::Bounded` |
+| bounded | What a call returns: the output whole if it fits the bound and is text, else none of it and where it **spilled**, a file the model reads like any other state. Nothing is truncated or re-encoded, so the window holds exactly what the log replays. | `machine::bounded::Bounded` |
 | call | One command the model issues and what it gets back: a system call into the harness. Untyped argv and stdin in, text and exit code out. The unit of limits and measurement. Its intent, decision and witness share its id. | `record::CallId` |
 | call table | The system call table: the toolset. | |
 | cead | The project and its one binary, its role chosen at start: `run` on the host; `init`, `harness` and `agent` in the machine. | crate and binary `cead`; `main::Role`, `Usage` |
@@ -74,7 +74,7 @@ Every noun has one home in code: a type, a module, or a subcommand. A noun may p
 | processor | What a process runs on. For the machine, the CPU; for the model, the GPU, a coprocessor to the model's process. A boot sees the model's processors as virtual, like vCPUs; how the engine shares its GPU among them (batching) is its scheduler's. | |
 | query | The argv of `run` or `agent`, commit-message sized; it opens its process's window. Anything longer is context, a file. | bytes in `record::Body::Report`, `Decision::Spawn` |
 | report | A boot's first record: binds the boot's key to the manifest's measurement, names what started it (run, or the snapshot a fork or recovery booted from), and carries the pinned prompt and the root's query. Signed by the processor on an attested boot. Linux's TSM report. | `record::Body::Report`, `Origin`; `spec/cead.tla` |
-| record | One entry the machine signs for the log, Linux audit's unit, canonically encoded. Types: report, intent (the model's turn and its command), decision, witness (how the command ended, its output's digest, what the call returned), exit (why the boot ended; the root's reply digest on a finish). A call's three share its id and process. | `record::Record`, `Body`, `Event`, `Exit`, `Signed`, `Signature`, `Digest`, `Malformed`; `spec/Cead/Record.lean` |
+| record | One entry the machine signs for the log, Linux audit's unit, canonically encoded. Types: report, intent (the model's turn and its command), decision, witness (how the command ended, its output's digest, what the call returned), exit (why the boot ended; the root's reply digest on a finish). A call's three share its id and process. | `record::Record`, `Body`, `Event`, `Exit`, `Signed`, `Signature`, `Digest`, `Malformed`, `Reader`; `spec/Cead/Record.lean` |
 | rights | What a call may do to state: read, write. | `machine::process::Rights` |
 | ring | A privilege layer: model processes; harness and tracer; host. | |
 | scheduler | Decides what runs where: machines on hosts (Kubernetes), requests on engines (Dynamo). Trusted for availability only; needs consensus once there is more than one. | |

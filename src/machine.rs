@@ -630,8 +630,10 @@ pub(crate) mod bounded {
     use crate::record::WaitStatus;
     use std::path::{Path, PathBuf};
 
-    /// Output admitted to the window only if it fits the bound; otherwise
-    /// none of it, and the model reads the spill file like any other state.
+    /// Output admitted to the window only if it fits the bound and is text
+    /// (UTF-8, as the engine's API requires, so the window holds exactly the
+    /// bytes the log replays); otherwise none of it, and the model reads the
+    /// spill file like any other state.
     #[derive(Debug, PartialEq, Eq)]
     pub(crate) enum Bounded {
         Fits(Vec<u8>),
@@ -639,9 +641,10 @@ pub(crate) mod bounded {
     }
 
     impl Bounded {
-        /// Admits `output` whole if it fits `bound`, else writes it to `spill`.
+        /// Admits `output` whole if it fits `bound` and is text, else writes it
+        /// to `spill`.
         pub(crate) fn admit(output: Vec<u8>, bound: usize, spill: &Path) -> std::io::Result<Bounded> {
-            if output.len() <= bound {
+            if output.len() <= bound && std::str::from_utf8(&output).is_ok() {
                 return Ok(Bounded::Fits(output));
             }
             std::fs::write(spill, &output)?;
@@ -689,6 +692,8 @@ pub(crate) mod bounded {
             let returned = String::from_utf8(over.returned(&WaitStatus::Signaled(9))).expect("utf-8");
             assert_eq!(returned, format!("signal 9 · 5 bytes → {}", spill.display()));
             assert_eq!(Bounded::admit(vec![], 0, &spill).expect("admit").returned(&WaitStatus::Exited(1)), b"exit 1");
+            let binary = Bounded::admit(vec![0xff, 0xfe], 64, &spill).expect("admit");
+            assert!(matches!(binary, Bounded::Spilled { size: 2, .. }), "bytes that are not text spill");
         }
     }
 }
