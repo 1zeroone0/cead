@@ -73,7 +73,7 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 | ring | A privilege layer: model processes; harness and tracer; host. | |
 | scheduler | Decides what runs where: machines on hosts, requests on engines. Trusted for availability only; needs consensus once there is more than one. |  |
 | slice | The bytes a child receives on stdin, sealed. | |
-| snapshot | The whole machine at an instant, taken between calls once the log holds every record so far. A boot from one is a **fork** (a new job; unlimited) or a **recovery** (the same job, after its boot is unknown; at most one per unknown boot; the operator's choice, manual by default). | |
+| snapshot | The whole machine at an instant, taken between calls once the log holds every record so far. A boot from one is a **fork** (a new job; unlimited) or a **recovery** (the same job, after its boot is unknown; at most one per unknown boot; the operator's choice, manual by default). A recovery **fences** its parent: the log keeps no record of the parent's after it. | |
 | task image | The tools one task brings: a read-only OCI image with a label declaring its tools, attached at boot. | |
 | tracer | eBPF in the machine's kernel, keyed by cgroup, outside the model's reach. Produces the witness. | |
 | VMM | What boots a machine: Cloud Hypervisor, attested on SEV-SNP or unattested on KVM; Firecracker and Virtualization.framework, unattested. Same machine, same records; only an attested boot's report is signed. | |
