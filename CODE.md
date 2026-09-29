@@ -116,7 +116,7 @@ Everything else (fields, structs and enums, most traits, invariants like `len â‰
 
 # TLA+
 
-- Modules are `spec/<name>.tla` with `<name>.cfg`; the system spec is `spec/cead.tla`. TLC is green before any Rust exists; the commit line records the TLA+ tools version and the bounds it passed at.
+- Modules are `spec/<name>.tla` with `<name>.cfg`; the system spec is `spec/cead.tla`. A layer whose state multiplies another's gets its own cfg over the same module (`spec/tree.cfg`). TLC is green before any Rust exists; the commit line records the TLA+ tools version and the bounds it passed at.
 - A PR that changes a protocol re-runs TLC, by hand until CI is demanded.
 - **spec**: a formula over behaviours of a state machine. **action**: one transition; one signature. **invariant**: what every reachable state satisfies; what TLC checks. **instance**: the bounds TLC searched; a proof only up to them.
 

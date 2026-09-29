@@ -44,7 +44,7 @@ System diagram to come with the first release.
 - [Recursive Language Models](https://arxiv.org/abs/2512.24601) (Zhang, Kraska, Khattab)
 - [Language model harnesses are compositional generalizers](https://alexzhang13.github.io/blog/2026/harness/) (Zhang, Khattab)
 - [OSTEP](https://pages.cs.wisc.edu/~remzi/OSTEP/) (Arpaci-Dusseau)
-- [The Datacenter as a Computer](https://link.springer.com/book/10.1007/978-3-031-01761-2) (Barroso, Hölzle, Ranganathan)
+- [The Datacenter as a Computer](https://web.eecs.umich.edu/~mosharaf/Readings/DC-Computer.pdf) (Barroso, Clidaras, Hölzle)
 - [Capability Myths Demolished](https://srl.cs.jhu.edu/pubs/SRL2003-02.pdf) (Miller, Yee, Shapiro)
 - [Robust Composition](http://www.erights.org/talks/thesis/) (Miller)
 - [Prime Agent](https://www.primeintellect.ai/blog/prime-agent) ([source](https://github.com/PrimeIntellect-ai/prime-agent)) and [Sandboxes](https://www.primeintellect.ai/blog/sandboxes) (Prime Intellect)
