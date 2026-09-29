@@ -8,7 +8,7 @@ Spec, skeleton, fill. TLA+, Lean and Rust are one pipeline, not alternatives: TL
 
 1. **Spec.** `spec/cead.tla` states what every behaviour of cead satisfies. Coarse and revisable.
 2. **Slice.** A PR takes a slice of the spec. Its dependencies are probed while scoping; findings go in a PR comment, the probe is never committed.
-3. **Core.** A pure function with a property worth proving gets its Lean spec first, green before any Rust.
+3. **Core.** Ask what a skeptic has to trust. Every pure function on that path (what signs, verifies, admits or renders) gets its Lean spec first, green before any Rust, and a differential test; elsewhere, a pure function gets one when a property is stated.
 4. **Skeleton.** One commit of types, signatures, private fields and one doc comment per item (what it owns, when it drops); bodies are `todo!()`; the type gate is green. It is the spec of custody. It mirrors the spec: variables become fields, states become variants or typestates, each action becomes one signature.
 5. **Fill.** Later commits change bodies. A signature that moves is learning: say why in the commit comment. A new capability is drift: it belongs to another PR. A fill commit names the action it implements.
 
@@ -48,9 +48,9 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 | engine | Executes the weights and signs what it produces: the model's counterpart to the machine. vLLM by default. |  |
 | evict | Dispose at any tier: window span, KV block, process, machine. | |
 | executed | What the kernel ran: the truth the records record. | `spec/cead.tla` |
-| harness | The Rust program in the machine: the model's kernel. Runs each process, installs kernel policy in the fork-exec gap, serves the calls, writes records. | |
+| harness | The Rust program in the machine: the model's kernel. Runs each process, installs kernel policy in the fork-exec gap, serves the calls, sequences records for init to sign. | |
 | host | What runs a machine or an engine: hardware, its processors, and what schedules onto them. Trusted for availability only; the model's processes cannot reach it. |  |
-| init | PID 1 in the machine. Assembles the view (task image as root, overlay, core first on PATH, descriptors), applies policy, execs the harness. | |
+| init | PID 1 in the machine, for the whole boot. Makes the boot's key and never lets it go; signs every record. Assembles the view (task image as root, overlay, core first on PATH, descriptors), applies policy, forks the harness. If the harness dies, the boot ends with no exit record: unknown. | |
 | integrity | The log says only what the machine signed, in the machine's order. Guaranteed by each boot's signature and hash chain, rooted in its report. | `spec/cead.tla` |
 | interface | One of the three lines everything else is swappable between. | |
 | job | One query's work: a root process and its tree. Started by `cead run`. Spans one boot, or more through recovery. |  |
@@ -67,7 +67,7 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 | processor | What a process runs on. For the machine, the CPU; for the model, the GPU, a coprocessor to the model's process. A boot sees the model's processors as virtual, like vCPUs; how the engine shares its GPU among them (batching) is its scheduler's. |  |
 | query | The argv of `run` or `agent`, commit-message sized. Anything longer is context. | |
 | report | A boot's first record: the processor's signed statement binding the boot's key, and for a fork or recovery the snapshot it booted from (that boot and its last record), to the manifest's measurement. Unsigned in trusted-host mode. Linux's TSM report. | `spec/cead.tla` |
-| record | One entry the machine signs for the log, Linux audit's unit. Types: report, intent, decision, witness, exit. A call's intent, decision and witness share its id, as Linux audit's records share an event. | `spec/cead.tla` |
+| record | One entry the machine signs for the log, Linux audit's unit. Types: report, intent, decision, witness, exit; the exit record carries the root process's reply. A call's intent, decision and witness share its id, as Linux audit's records share an event. | `spec/cead.tla` |
 | rights | What a call may do to state: read, write. | |
 | ring | A privilege layer: model processes; harness and tracer; host. | |
 | scheduler | Decides what runs where: machines on hosts (Kubernetes), requests on engines (Dynamo). Trusted for availability only; needs consensus once there is more than one. |  |

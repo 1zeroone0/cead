@@ -35,6 +35,7 @@ CONSTANTS
     Processors,  \* how many of a boot's processes the model can run at once
     Procs,       \* model values: process slots in a boot
     RootProc,    \* the process `cead run` starts
+    Replies,     \* what the model can reply without a command
     Boots,       \* model values: each boot, which is also its key
     Root,        \* the boot `cead run` starts
     NoRecord     \* a model value: no record awaiting acknowledgment
@@ -52,7 +53,7 @@ Origins   == {"run", "fork", "recovery"}                \* what a report says st
 Signers   == Boots \cup {"path", "processor"}           \* the processor signs only reports
 MaxId     == Cardinality(Procs) * CallLimit             \* every call of every process
 MaxSeq    == 3 * MaxId + 2                              \* the report, every call's records, the exit
-None      == "none"                                     \* no process, or no snapshot
+None      == "none"                                     \* no process, snapshot or reply
 Live      == {"ready", "running", "blocked"}
 
 \* One record of a boot. `seq` is its place in the boot's hash chain: the
@@ -60,26 +61,31 @@ Live      == {"ready", "running", "blocked"}
 \* id 0) names its boot, whose key signs the rest, what started it, and for
 \* a fork or recovery the snapshot it booted from: that boot and its last
 \* record. A call's intent, decision and witness carry its id and command;
-\* the exit record carries id 0 and why the boot ended.
+\* the exit record carries id 0, why the boot ended, and the root process's
+\* reply if it finished: the answer, signed.
 Record == [boot : Boots, seq : 1..MaxSeq, id : 0..MaxId,
            type : CallTypes \cup {"report", "exit"},
            body : Commands \cup Reasons \cup Origins, key : Signers,
-           from : Boots \cup {None}, last : 0..MaxSeq]
+           from : Boots \cup {None}, last : 0..MaxSeq, reply : Replies \cup {None}]
 
 \* One process, as the harness holds it. `cap` is the meter it was given,
 \* `meter` what remains; `waits` is the child it waits for in the foreground;
-\* `status` is why it ended, and `by` the process that killed it.
+\* `status` is why it ended, `by` the process that killed it, and `reply`
+\* what it replied if it finished.
 Proc == [state : {"unused", "zombie", "reaped"} \cup Live,
          parent : Procs \cup {None}, calls : 0..CallLimit,
          cap : 0..MeterCap, meter : 0..MeterCap, depth : 0..Depth,
          rights : SUBSET Rights, waits : Procs \cup {None},
-         status : Reasons \cup {"killed", None}, by : Procs \cup {None}]
+         status : Reasons \cup {"killed", None}, by : Procs \cup {None},
+         reply : Replies \cup {None}]
 
 Unused == [state |-> "unused", parent |-> None, calls |-> 0, cap |-> 0, meter |-> 0,
-           depth |-> 0, rights |-> {}, waits |-> None, status |-> None, by |-> None]
+           depth |-> 0, rights |-> {}, waits |-> None, status |-> None, by |-> None,
+           reply |-> None]
 Spawned(parent, cap, depth, rights) ==
           [state |-> "ready", parent |-> parent, calls |-> 0, cap |-> cap, meter |-> cap,
-           depth |-> depth, rights |-> rights, waits |-> None, status |-> None, by |-> None]
+           depth |-> depth, rights |-> rights, waits |-> None, status |-> None, by |-> None,
+           reply |-> None]
 RootTable == [p \in Procs |-> IF p = RootProc THEN Spawned(None, MeterCap, Depth, Rights)
                                               ELSE Unused]
 
@@ -91,17 +97,19 @@ VARIABLES
     seq,        \* per boot: the machine's last sequence number
     pending,    \* per boot: the report or exit record awaiting acknowledgment, or NoRecord
     executed,   \* per boot: what the kernel ran, in order: the truth
+    unwitnessed, \* per boot: calls executed whose witness is not yet sent
     job,        \* per boot: the boot that started its job
     snapshots,  \* every snapshot taken: a boot, its last record, its processes
     transit,    \* every record sent: each can be lost, delayed, reordered, duplicated
     log         \* held outside the machine: a set of records
 
-vars == <<machine, ps, intent, ids, seq, pending, executed, job, snapshots, transit, log>>
+vars == <<machine, ps, intent, ids, seq, pending, executed, unwitnessed, job, snapshots,
+          transit, log>>
 
 Rec(b, s, i, t, x) == [boot |-> b, seq |-> s, id |-> i, type |-> t, body |-> x,
-                       key |-> b, from |-> None, last |-> 0]
+                       key |-> b, from |-> None, last |-> 0, reply |-> None]
 Report(b, o, f, l) == [boot |-> b, seq |-> 1, id |-> 0, type |-> "report", body |-> o,
-                       key |-> "processor", from |-> f, last |-> l]
+                       key |-> "processor", from |-> f, last |-> l, reply |-> None]
 Logged(b, s)        == \E r \in log : r.boot = b /\ r.seq = s
 LoggedType(b, i, t) == \E r \in log : r.boot = b /\ r.id = i /\ r.type = t
 \* The log holds boot b's report: b's key is vouched for.
@@ -148,6 +156,7 @@ Init ==
     /\ seq       = [b \in Boots |-> 0]
     /\ pending   = [b \in Boots |-> NoRecord]
     /\ executed  = [b \in Boots |-> <<>>]
+    /\ unwitnessed = [b \in Boots |-> {}]
     /\ job       = [b \in Boots |-> b]
     /\ snapshots = {}
     /\ transit   = {}
@@ -163,6 +172,7 @@ Begin(b, r, t, i, j) ==
     /\ pending' = [pending EXCEPT ![b] = r]
     /\ job'     = [job EXCEPT ![b] = j]
     /\ transit' = transit \cup {r}
+    /\ unwitnessed' = [unwitnessed EXCEPT ![b] = {}]
     /\ UNCHANGED <<intent, executed, snapshots, log>>
 
 \* `cead run` boots the root.
@@ -184,7 +194,7 @@ Start(b) ==
     /\ Logged(b, 1)
     /\ machine' = [machine EXCEPT ![b] = "up"]
     /\ pending' = [pending EXCEPT ![b] = NoRecord]
-    /\ UNCHANGED <<ps, intent, ids, seq, executed, job, snapshots, transit, log>>
+    /\ UNCHANGED <<unwitnessed, ps, intent, ids, seq, executed, job, snapshots, transit, log>>
 
 \* The whole machine at an instant: no call in progress, and the log holds
 \* every record so far. A process that was running is ready: its inference
@@ -192,29 +202,34 @@ Start(b) ==
 Snapshot(b) ==
     /\ machine[b] = "up"
     /\ \A p \in Procs : intent[b, p] = NoRecord
+    /\ unwitnessed[b] = {}
     /\ \A s \in 1..seq[b] : Logged(b, s)
     /\ snapshots' = snapshots \cup
          {[boot |-> b, last |-> seq[b], ids |-> ids[b],
            procs |-> [p \in Procs |-> IF ps[b, p].state = "running"
                                         THEN [ps[b, p] EXCEPT !.state = "ready"]
                                         ELSE ps[b, p]]]}
-    /\ UNCHANGED <<machine, ps, intent, ids, seq, pending, executed, job, transit, log>>
+    /\ UNCHANGED <<unwitnessed, machine, ps, intent, ids, seq, pending, executed, job, transit, log>>
 
 \* The machine signs its exit record, its last record, and waits for the log
-\* to acknowledge it. Any call in progress is cut off.
-Exit(b, reason) ==
+\* to acknowledge it. A call awaiting its decision is cut off; every executed
+\* call has been witnessed first, so the exit record never hides a gap.
+Exit(b, reason, reply) ==
     /\ machine[b] = "up"
-    /\ LET r == Rec(b, seq[b] + 1, 0, "exit", reason)
+    /\ unwitnessed[b] = {}
+    /\ LET r == [Rec(b, seq[b] + 1, 0, "exit", reason) EXCEPT !.reply = reply]
        IN /\ machine' = [machine EXCEPT ![b] = "exiting"]
           /\ seq'     = [seq EXCEPT ![b] = seq[b] + 1]
           /\ pending' = [pending EXCEPT ![b] = r]
           /\ transit' = transit \cup {r}
-    /\ UNCHANGED <<ps, intent, ids, executed, job, snapshots, log>>
+    /\ UNCHANGED <<unwitnessed, ps, intent, ids, executed, job, snapshots, log>>
 
-\* The root process has ended: the boot exits with its reason.
-Reap(b)    == ps[b, RootProc].state = "zombie" /\ Exit(b, ps[b, RootProc].status)
-\* The machine's own wall-time limit fires.
-Timeout(b) == Exit(b, "timeout")
+\* The root process has ended: the boot exits with its reason and reply.
+Reap(b)    == ps[b, RootProc].state = "zombie" /\
+              Exit(b, ps[b, RootProc].status, ps[b, RootProc].reply)
+\* The machine's own wall-time limit fires. The harness kills running
+\* commands first; each is still witnessed (Witness), then the boot exits.
+Timeout(b) == Exit(b, "timeout", None)
 
 \* The log has the exit record: the machine is gone.
 Leave(b) ==
@@ -222,7 +237,7 @@ Leave(b) ==
     /\ Logged(b, pending[b].seq)
     /\ machine' = [machine EXCEPT ![b] = "evicted"]
     /\ pending' = [pending EXCEPT ![b] = NoRecord]
-    /\ UNCHANGED <<ps, intent, ids, seq, executed, job, snapshots, transit, log>>
+    /\ UNCHANGED <<unwitnessed, ps, intent, ids, seq, executed, job, snapshots, transit, log>>
 
 \* The machine ends without an acknowledged exit record. A crash can happen
 \* at any point. The host's hard kill is the same event, but it is assumed
@@ -231,7 +246,7 @@ Evict(b) ==
     /\ machine[b] \in {"booting", "up", "exiting"}
     /\ machine' = [machine EXCEPT ![b] = "evicted"]
     /\ pending' = [pending EXCEPT ![b] = NoRecord]
-    /\ UNCHANGED <<ps, intent, ids, seq, executed, job, snapshots, transit, log>>
+    /\ UNCHANGED <<unwitnessed, ps, intent, ids, seq, executed, job, snapshots, transit, log>>
 
 Crash(b)    == Evict(b)
 HostKill(b) == Evict(b)
@@ -245,7 +260,7 @@ Dispatch(b, p) ==
     /\ ps[b, p].state = "ready"
     /\ Cardinality(Running(b)) < Processors
     /\ ps' = [ps EXCEPT ![b, p].state = "running"]
-    /\ UNCHANGED <<machine, intent, ids, seq, pending, executed, job, snapshots, transit, log>>
+    /\ UNCHANGED <<unwitnessed, machine, intent, ids, seq, pending, executed, job, snapshots, transit, log>>
 
 \* The processor returns a command. Its unit is charged to every meter from
 \* the process up to the root; the process releases the processor, blocks,
@@ -267,11 +282,11 @@ Issue(b, p, c) ==
           /\ ids'     = [ids EXCEPT ![b] = ids[b] + 1]
           /\ seq'     = [seq EXCEPT ![b] = seq[b] + 1]
           /\ transit' = transit \cup {r}
-    /\ UNCHANGED <<machine, pending, executed, job, snapshots, log>>
+    /\ UNCHANGED <<unwitnessed, machine, pending, executed, job, snapshots, log>>
 
 \* The log has acknowledged the intent: the harness checks the call against
-\* policy. Deny returns to the model. Allow runs the command, and the tracer
-\* witnesses it; both records go through the harness, which sequences them.
+\* policy and sends the decision. Deny returns to the model. Allow starts
+\* the command, whose witness is sent when it ends (Witness).
 \* `agent` spawns a child in the foreground (the caller waits) or the
 \* background; it fails if the caller's depth is spent or no slot is free.
 \* `kill` ends one of the caller's live children and its descendants.
@@ -289,9 +304,9 @@ Decide(b, p) ==
            Done(t) == [t EXCEPT ![b, p].state = "ready"]
        IN /\ IF Decision(c) = "allow"
                THEN /\ executed' = [executed EXCEPT ![b] = Append(@, [id |-> i, cmd |-> c])]
-                    /\ transit' = transit \cup
-                         {Rec(b, s + 1, i, "decision", c), Rec(b, s + 2, i, "witness", c)}
-                    /\ seq' = [seq EXCEPT ![b] = s + 2]
+                    /\ unwitnessed' = [unwitnessed EXCEPT ![b] = @ \cup {[id |-> i, cmd |-> c]}]
+                    /\ transit' = transit \cup {Rec(b, s + 1, i, "decision", c)}
+                    /\ seq' = [seq EXCEPT ![b] = s + 1]
                     /\ IF c = "agent" /\ me.depth > 0 /\ Free # {}
                          THEN \E q \in Free, m \in 1..MeterCap, R \in SUBSET me.rights,
                                  fg \in BOOLEAN :
@@ -304,6 +319,7 @@ Decide(b, p) ==
                                    /\ intent' = [CutOff(b, q) EXCEPT ![b, p] = NoRecord]
                        ELSE ps' = Done(ps)
                ELSE /\ executed' = executed
+                    /\ unwitnessed' = unwitnessed
                     /\ transit' = transit \cup {Rec(b, s + 1, i, "decision", c)}
                     /\ seq' = [seq EXCEPT ![b] = s + 1]
                     /\ ps' = Done(ps)
@@ -311,14 +327,26 @@ Decide(b, p) ==
                intent' = [intent EXCEPT ![b, p] = NoRecord]
     /\ UNCHANGED <<machine, ids, pending, job, snapshots, log>>
 
+\* A command ends, however it ends (exit, signal, a kill from its process's
+\* ancestor or the harness): the tracer's witness goes through the harness,
+\* which sequences it. A process's calls are witnessed whatever becomes of
+\* the process.
+Witness(b, e) ==
+    /\ machine[b] = "up"
+    /\ e \in unwitnessed[b]
+    /\ unwitnessed' = [unwitnessed EXCEPT ![b] = @ \ {e}]
+    /\ seq' = [seq EXCEPT ![b] = seq[b] + 1]
+    /\ transit' = transit \cup {Rec(b, seq[b] + 1, e.id, "witness", e.cmd)}
+    /\ UNCHANGED <<machine, ps, intent, ids, pending, executed, job, snapshots, log>>
+
 \* The model replies without a command: the process ends, and its running
 \* descendants are killed. The reply is its stdout.
-Finish(b, p) ==
+Finish(b, p, y) ==
     /\ machine[b] = "up"
     /\ ps[b, p].state = "running"
-    /\ ps' = Ended(b, p, "finish")
+    /\ ps' = [Ended(b, p, "finish") EXCEPT ![b, p].reply = y]
     /\ intent' = CutOff(b, p)
-    /\ UNCHANGED <<machine, ids, seq, pending, executed, job, snapshots, transit, log>>
+    /\ UNCHANGED <<unwitnessed, machine, ids, seq, pending, executed, job, snapshots, transit, log>>
 
 \* The processor returns a command the process cannot pay for, or its call
 \* limit is reached: it ends, and its descendants are killed.
@@ -328,7 +356,7 @@ Exhaust(b, p) ==
     /\ \/ ~Chargeable(b, p) /\ ps' = Ended(b, p, "meter")
        \/ ps[b, p].calls = CallLimit /\ ps' = Ended(b, p, "limit")
     /\ intent' = CutOff(b, p)
-    /\ UNCHANGED <<machine, ids, seq, pending, executed, job, snapshots, transit, log>>
+    /\ UNCHANGED <<unwitnessed, machine, ids, seq, pending, executed, job, snapshots, transit, log>>
 
 \* The harness reaps an ended child; a parent waiting on it in the
 \* foreground is ready again.
@@ -341,7 +369,7 @@ ReapChild(b, q) ==
        IN ps' = IF ps[b, p].waits = q /\ ps[b, p].state = "blocked"
                   THEN [t EXCEPT ![b, p].state = "ready", ![b, p].waits = None]
                   ELSE t
-    /\ UNCHANGED <<machine, intent, ids, seq, pending, executed, job, snapshots, transit, log>>
+    /\ UNCHANGED <<unwitnessed, machine, intent, ids, seq, pending, executed, job, snapshots, transit, log>>
 
 -----------------------------------------------------------------------------
 (* Records in transit: outside the machine, so they go on after eviction  *)
@@ -366,7 +394,7 @@ Arrive(r) ==
               /\ ~Recovered(r.boot)
     /\ ~Logged(r.boot, r.seq)
     /\ log' = log \cup {r}
-    /\ UNCHANGED <<machine, ps, intent, ids, seq, pending, executed, job, snapshots, transit>>
+    /\ UNCHANGED <<unwitnessed, machine, ps, intent, ids, seq, pending, executed, job, snapshots, transit>>
 
 Deliver(r) == r \in transit /\ Arrive(r)
 
@@ -385,9 +413,10 @@ Next ==
          \/ Start(b) \/ Snapshot(b) \/ Reap(b) \/ Timeout(b) \/ Leave(b)
          \/ Crash(b) \/ HostKill(b)
          \/ \E p \in Procs :
-              \/ Dispatch(b, p) \/ Decide(b, p) \/ Finish(b, p) \/ Exhaust(b, p)
-              \/ ReapChild(b, p)
+              \/ Dispatch(b, p) \/ Decide(b, p) \/ Exhaust(b, p) \/ ReapChild(b, p)
               \/ \E c \in Commands : Issue(b, p, c)
+              \/ \E y \in Replies : Finish(b, p, y)
+         \/ \E e \in unwitnessed[b] : Witness(b, e)
     \/ \E r \in transit : Deliver(r) \/ Forge(r)
 
 Spec == Init /\ [][Next]_vars /\ \A b \in Boots : WF_vars(HostKill(b))
@@ -403,6 +432,7 @@ TypeOK ==
     /\ seq \in [Boots -> 0..MaxSeq]
     /\ pending \in [Boots -> Record \cup {NoRecord}]
     /\ \A b \in Boots : executed[b] \in Seq([id : 1..MaxId, cmd : Commands])
+    /\ unwitnessed \in [Boots -> SUBSET [id : 1..MaxId, cmd : Commands]]
     /\ job \in [Boots -> Boots]
     /\ transit \subseteq Record
     /\ log \subseteq Record
@@ -439,11 +469,12 @@ Unambiguous ==
     LET Seen == {r \in transit : r.key # "path"} \cup log
     IN \A r1, r2 \in Seen : (r1.boot = r2.boot /\ r1.seq = r2.seq) => r1 = r2
 
-\* 9. An exit record saying `finish` means the root process ended its turn:
-\*    it was not cut off.
+\* 9. An exit record saying `finish` means the root process ended its turn,
+\*    was not cut off, and replied what the record says.
 FinishHonest ==
     \A r \in log : (r.type = "exit" /\ r.body = "finish") =>
-                     ps[r.boot, RootProc].status = "finish"
+                     /\ ps[r.boot, RootProc].status = "finish"
+                     /\ r.reply = ps[r.boot, RootProc].reply
 
 \* 10. A boot is complete when the log holds its exit record with no gap
 \*     before it: then every call it executed has all three records logged.

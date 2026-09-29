@@ -70,10 +70,10 @@ A **manifest** is one file that names a machine: kernel, task image, policy, VMM
 What a job does, from manifest to first command:
 
 1. The VMM boots the kernel with two read-only disks: the core (built by nix) and the task image.
-2. The machine makes its key and sends its report; nothing runs until the log holds it.
+2. init makes the boot's key, which never leaves it, and sends the report; nothing runs until the log holds it.
 3. init, as root, loads the eBPF programs and compiles the policy into seccomp and Landlock.
 4. init mounts the view: the task image as root, the core first on PATH, one descriptor per grant.
-5. The harness spawns the root process: policy attached, an unprivileged uid, the shell.
+5. init forks the harness, which spawns the root process: policy attached, an unprivileged uid, the shell.
    Every child inherits the policy; no syscall loosens it, and no model process holds CAP_BPF.
 6. The harness sends the engine the query and a system prompt rendered from what it mounted.
 7. The model writes its first command.
@@ -158,5 +158,5 @@ The machine is the unit of scale. Work fans out three ways:
 - eBPF records which programs start, which files are read, and each request to the engine.
 - Keyed by cgroup: each action is traced to the command that caused it, however many processes it spawned.
 - The log holds each boot's records, in order:
-  its report; per call an intent, a decision, and a witness if allowed; its exit.
+  its report; per call an intent, a decision, and a witness if allowed; its exit, carrying the answer.
 - The console reads it live, during a job and after.
