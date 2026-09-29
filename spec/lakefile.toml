@@ -5,5 +5,5 @@ defaultTargets = ["Cead"]
 name = "Cead"
 
 [[lean_exe]]
-name = "oracle"
-root = "Cead.Oracle"
+name = "differential"
+root = "Cead.Differential"

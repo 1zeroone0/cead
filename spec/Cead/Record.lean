@@ -24,12 +24,14 @@ inductive Attestation where
   | snp (report : Blob)
 deriving DecidableEq
 
-/-- The outcome of checking a call against policy. `spawn` allows an `agent`
-call and names the process it starts. -/
+/-- The outcome of checking a call against policy. A deny carries what the
+call returned to the model, which ends the call. `spawn` allows an `agent` call and
+names the process it starts and that process's query, which opens its
+window. -/
 inductive Decision where
-  | deny
+  | deny (returned : Blob)
   | allow
-  | spawn (child : UInt64)
+  | spawn (child : UInt64) (query : Blob)
 deriving DecidableEq
 
 /-- How a command ended, as `wait(2)` reports it. -/
@@ -38,12 +40,16 @@ inductive WaitStatus where
   | signaled (signal : UInt8)
 deriving DecidableEq
 
-/-- One call's record, sharing its id and process with the call's other two. -/
+/-- One call's record, sharing its id and process with the call's other two.
+Together they hold what the call added to its process's window. -/
 inductive Event where
-  | intent (command : Blob)
+  /-- The model's whole turn, and the command the harness took from it. -/
+  | intent (turn : Blob) (command : Blob)
   | decision (decision : Decision)
-  /-- `output` is the digest of the command's whole output. -/
-  | witness (status : WaitStatus) (output : Blob)
+  /-- `output` is the digest of the command's whole output; `returned` what the
+  call returned to the model: the output if it fit the bound, else where it
+  spilled. -/
+  | witness (status : WaitStatus) (output : Blob) (returned : Blob)
 deriving DecidableEq
 
 /-- Why a boot ended: the root process's status. Only `finish` has a reply,
@@ -56,7 +62,10 @@ inductive Exit where
 deriving DecidableEq
 
 inductive Body where
+  /-- `prompt` is the pinned prompt and `query` the root's: its window opens
+  with them. -/
   | report (origin : Origin) (measurement : Blob) (attestation : Attestation)
+      (prompt : Blob) (query : Blob)
   /-- `proc` is the boot's number for the process that made the call. -/
   | call (id : UInt64) (proc : UInt64) (event : Event)
   | exit (exit : Exit)
@@ -95,13 +104,13 @@ def attestation : Codec Attestation :=
     (by intro e; cases e <;> rfl)
 
 private def DecisionT : Fin 3 → Type
-  | 0 => Unit | 1 => Unit | 2 => UInt64
+  | 0 => Blob | 1 => Unit | 2 => UInt64 × Blob
 
 def decision : Codec Decision :=
-  iso (tagged 3 (by decide) DecisionT fun | 0 => unit | 1 => unit | 2 => u64)
-    (fun | ⟨0, _⟩ => .deny | ⟨1, _⟩ => .allow | ⟨2, c⟩ => .spawn c)
-    (fun | .deny => ⟨0, ()⟩ | .allow => ⟨1, ()⟩ | .spawn c => ⟨2, c⟩)
-    (by rintro ⟨i, x⟩; match i, x with | 0, () => rfl | 1, () => rfl | 2, _ => rfl)
+  iso (tagged 3 (by decide) DecisionT fun | 0 => blob | 1 => unit | 2 => pair u64 blob)
+    (fun | ⟨0, m⟩ => .deny m | ⟨1, _⟩ => .allow | ⟨2, (c, q)⟩ => .spawn c q)
+    (fun | .deny m => ⟨0, m⟩ | .allow => ⟨1, ()⟩ | .spawn c q => ⟨2, (c, q)⟩)
+    (by rintro ⟨i, x⟩; match i, x with | 0, _ => rfl | 1, () => rfl | 2, (_, _) => rfl)
     (by intro d; cases d <;> rfl)
 
 private def u8 : Codec UInt8 :=
@@ -120,13 +129,17 @@ def waitStatus : Codec WaitStatus :=
     (by intro e; cases e <;> rfl)
 
 private def EventT : Fin 3 → Type
-  | 0 => Blob | 1 => Decision | 2 => WaitStatus × Blob
+  | 0 => Blob × Blob | 1 => Decision | 2 => WaitStatus × Blob × Blob
 
 def event : Codec Event :=
-  iso (tagged 3 (by decide) EventT fun | 0 => blob | 1 => decision | 2 => pair waitStatus blob)
-    (fun | ⟨0, c⟩ => .intent c | ⟨1, d⟩ => .decision d | ⟨2, (w, o)⟩ => .witness w o)
-    (fun | .intent c => ⟨0, c⟩ | .decision d => ⟨1, d⟩ | .witness w o => ⟨2, (w, o)⟩)
-    (by rintro ⟨i, x⟩; match i, x with | 0, _ => rfl | 1, _ => rfl | 2, (_, _) => rfl)
+  iso (tagged 3 (by decide) EventT
+        fun | 0 => pair blob blob | 1 => decision | 2 => pair waitStatus (pair blob blob))
+    (fun | ⟨0, (t, c)⟩ => .intent t c | ⟨1, d⟩ => .decision d
+         | ⟨2, (w, o, m)⟩ => .witness w o m)
+    (fun | .intent t c => ⟨0, (t, c)⟩ | .decision d => ⟨1, d⟩
+         | .witness w o m => ⟨2, (w, o, m)⟩)
+    (by rintro ⟨i, x⟩
+        match i, x with | 0, (_, _) => rfl | 1, _ => rfl | 2, (_, _, _) => rfl)
     (by intro e; cases e <;> rfl)
 
 private def ExitT : Fin 4 → Type
@@ -140,16 +153,18 @@ def exit : Codec Exit :=
     (by intro e; cases e <;> rfl)
 
 private def BodyT : Fin 3 → Type
-  | 0 => Origin × Blob × Attestation | 1 => UInt64 × UInt64 × Event | 2 => Exit
+  | 0 => Origin × Blob × Attestation × Blob × Blob | 1 => UInt64 × UInt64 × Event | 2 => Exit
 
 def body : Codec Body :=
   iso (tagged 3 (by decide) BodyT
-        fun | 0 => pair origin (pair blob attestation) | 1 => pair u64 (pair u64 event)
-            | 2 => exit)
-    (fun | ⟨0, (o, m, a)⟩ => .report o m a | ⟨1, (i, p, e)⟩ => .call i p e | ⟨2, x⟩ => .exit x)
-    (fun | .report o m a => ⟨0, (o, m, a)⟩ | .call i p e => ⟨1, (i, p, e)⟩ | .exit x => ⟨2, x⟩)
+        fun | 0 => pair origin (pair blob (pair attestation (pair blob blob)))
+            | 1 => pair u64 (pair u64 event) | 2 => exit)
+    (fun | ⟨0, (o, m, a, p, q)⟩ => .report o m a p q | ⟨1, (i, p, e)⟩ => .call i p e
+         | ⟨2, x⟩ => .exit x)
+    (fun | .report o m a p q => ⟨0, (o, m, a, p, q)⟩ | .call i p e => ⟨1, (i, p, e)⟩
+         | .exit x => ⟨2, x⟩)
     (by rintro ⟨i, x⟩
-        match i, x with | 0, (_, _, _) => rfl | 1, (_, _, _) => rfl | 2, _ => rfl)
+        match i, x with | 0, (_, _, _, _, _) => rfl | 1, (_, _, _) => rfl | 2, _ => rfl)
     (by intro b; cases b <;> rfl)
 
 def record : Codec Record :=

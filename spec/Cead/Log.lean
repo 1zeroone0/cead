@@ -23,7 +23,7 @@ def Body.isExit : Body → Bool
 
 /-- The boot a report recovers, if it is a recovery. -/
 def Body.recovers : Body → Option Blob
-  | .report (.recovery b _) _ _ => some b
+  | .report (.recovery b _) .. => some b
   | _ => none
 
 section
@@ -58,7 +58,7 @@ sequence. Any other record needs its boot's report, and no recovery of its
 boot: a recovery fences the boot it recovers. -/
 def Admits (log : Log) (r : Record) : Prop :=
   match r.body with
-  | .report o _ _ => r.seq = 1 ∧ o.Admits log
+  | .report o .. => r.seq = 1 ∧ o.Admits log
   | _ => 1 < r.seq ∧ Vouched log r.boot ∧ ¬ Recovered log r.boot
 
 instance : Decidable (Admits log r) := by unfold Admits; split <;> infer_instance
@@ -71,7 +71,7 @@ def accept (log : Log) (r : Record) : Option Log :=
 
 /-- The snapshot a fork or recovery booted from. -/
 def Body.source : Body → Option (Blob × UInt64)
-  | .report (.fork b l) _ _ | .report (.recovery b l) _ _ => some (b, l)
+  | .report (.fork b l) .. | .report (.recovery b l) .. => some (b, l)
   | _ => none
 
 /-- What every log `accept` builds from empty satisfies. -/
@@ -103,7 +103,7 @@ private theorem logged_append (h : Logged log b s) : Logged (log ++ [r]) b s := 
 private theorem recovers_source {x : Record} (h : x.body.recovers = some b) :
     ∃ l, x.body.source = some (b, l) := by
   match hb : x.body, h with
-  | .report (.recovery b' l) _ _, h =>
+  | .report (.recovery b' l) .., h =>
     simp only [Body.recovers, Option.some.injEq] at h; subst h; exact ⟨l, rfl⟩
 
 /-- A recovered boot's report is in the log: the recovery names one of its records. -/
@@ -143,7 +143,7 @@ theorem accept_valid {log' : Log} (hv : Valid log) (h : accept log r = some log'
       · rename_i hb
         have : x.body.isReport = false := by
           unfold Body.isReport; split
-          · rename_i h; exact absurd h (hb _ _ _)
+          · rename_i h; exact absurd h (hb _ _ _ _ _)
           · rfl
         simp [this, hadm.1]
   · rw [List.pairwise_append]
@@ -165,7 +165,7 @@ theorem accept_valid {log' : Log} (hv : Valid log) (h : accept log r = some log'
     · simp only [List.mem_singleton] at hx; subst hx
       unfold Admits at hadm
       split at hadm
-      · rename_i o m e hb
+      · rename_i o _ _ _ _ hb
         rw [hb] at hs
         cases o <;> simp only [Body.source, Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hs
         all_goals
@@ -175,8 +175,8 @@ theorem accept_valid {log' : Log} (hv : Valid log) (h : accept log r = some log'
         · exact logged_append hadm.2.1
       · rename_i hb
         match hx : x.body, hs with
-        | .report (.fork _ _) _ _, _ | .report (.recovery _ _) _ _, _ =>
-          exact absurd hx (hb _ _ _)
+        | .report (.fork _ _) .., _ | .report (.recovery _ _) .., _ =>
+          exact absurd hx (hb _ _ _ _ _)
   · rw [List.pairwise_append]
     refine ⟨hv.fenced, by simp, ?_⟩
     intro x hx y hy h
@@ -188,13 +188,13 @@ theorem accept_valid {log' : Log} (hv : Valid log) (h : accept log r = some log'
     simp only [List.mem_singleton] at hy; subst hy
     unfold Admits at hadm
     split at hadm
-    · rename_i o m e hb
+    · rename_i o _ _ _ _ hb
       cases o <;> simp [Body.recovers, hb] at hyb
       subst hyb
       exact hadm.2.2.2 ⟨x, hx, hxb⟩
     · rename_i hb
       match hy : y.body, hyb with
-      | .report (.recovery _ _) _ _, _ => exact absurd hy (hb _ _ _)
+      | .report (.recovery _ _) .., _ => exact absurd hy (hb _ _ _ _ _)
   · intro b hex hrec
     obtain ⟨x, hx, hxb, hxe⟩ := hex
     obtain ⟨y, hy, hyr⟩ := hrec
@@ -204,20 +204,20 @@ theorem accept_valid {log' : Log} (hv : Valid log) (h : accept log r = some log'
       simp only [List.mem_singleton] at hyr'; subst hyr'
       unfold Admits at hadm
       split at hadm
-      · rename_i o m e hb
+      · rename_i o _ _ _ _ hb
         cases o <;> simp [Body.recovers, hb] at hyr
         subst hyr
         exact hadm.2.2.1 ⟨x, hxo, hxb, hxe⟩
       · rename_i hb
         match hyb : y.body, hyr with
-        | .report (.recovery _ _) _ _, _ => exact absurd hyb (hb _ _ _)
+        | .report (.recovery _ _) .., _ => exact absurd hyb (hb _ _ _ _ _)
     · -- r is b's exit record, and b is already recovered
       simp only [List.mem_singleton] at hxr; subst hxr
       exact hfresh (hxb ▸ ⟨y, hyo, hyr⟩)
     · simp only [List.mem_singleton] at hxr hyr'
       rw [hxr] at hxe; rw [hyr'] at hyr
       match hb : r.body, hxe, hyr with
-      | .report (.recovery _ _) _ _, hxe, _ => simp [Body.isExit] at hxe
+      | .report (.recovery _ _) .., hxe, _ => simp [Body.isExit] at hxe
 
 /-- The logs `accept` builds from empty, one record at a time. -/
 inductive Accepted : Log → Prop

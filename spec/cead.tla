@@ -65,6 +65,12 @@ Live      == {"ready", "running", "blocked"}
 \* as `child`, so the log holds the process tree. The exit record carries
 \* id 0, why the boot ended, and the root process's reply if it finished:
 \* the answer, signed.
+\* The records also carry every byte a window holds, so the log alone
+\* replays what the model saw on each call: the report the pinned prompt and
+\* the root's query; a spawning decision the child's query; an intent the
+\* model's whole turn beside the command taken from it; and the record that
+\* ends a call (a deny, or the witness) what the call returned to it. The
+\* spec abstracts all of these as `body`.
 Record == [boot : Boots, seq : 1..MaxSeq, id : 0..MaxId,
            type : CallTypes \cup {"report", "exit"},
            body : Commands \cup Reasons \cup Origins, key : Signers,
