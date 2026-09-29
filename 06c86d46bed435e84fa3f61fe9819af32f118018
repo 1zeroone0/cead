@@ -1,0 +1,197 @@
+# #11 comments
+
+## 1zeroone0 · 2026-09-28T02:46:12Z
+
+`e705f5d`
+
+1. **Built** — CODE.md vocabulary rows sorted alphabetically; no row changed.
+2. **Why** — Unsorted, a noun couldn't be looked up while scoping the spec against it.
+3. **Bloat** — None added.
+4. **Drift** — None; content identical.
+5. **Trust surface** — 36 rows before and after; diff is moves only.
+6. **How it breaks** — New rows must be inserted in order; nothing enforces it.
+7. **Not confident** — Nothing.
+8. **Verify yourself** — The table reads in order.
+9. **Next steps** — Additional commits: layer 1 of `spec/cead.tla` once its state and actions are settled.
+
+## 1zeroone0 · 2026-09-28T03:13:32Z
+
+`a2d9c6f`
+
+1. **Built** — Vocabulary: `host` added; `membrane` folded into `call`; `log` held outside the machine. "guest" replaced by "machine" in README and CODE.md. README states that cead trusts the host's operator and hardware.
+2. **Why** — "guest" and "machine" named one thing. "host" was used everywhere and defined nowhere. The log outside the machine is the design, not a file on the host, which is one deployment of it. `membrane`'s ocap meaning (transitive wrap and revoke) belongs to rlm's descriptors if they need revocation; as defined it restated `call`.
+3. **Bloat** — Rows: one added, one removed.
+4. **Drift** — Horizon comments still say "guest" (backend portability, observer, tools seam); fixed in the Horizon re-cut this PR requires. The confidential backend is a new Horizon comment.
+5. **Trust surface** — Prose only. No "guest" remains in README or CODE.md.
+6. **How it breaks** — "Held outside the machine" names no store yet; the spec states its properties, not its form.
+7. **Not confident** — Whether `host` should list `cead` by name, since the operator's binary is also the project.
+8. **Verify yourself** — README Identity bullet on trust; the `call` row.
+9. **Next steps** — Additional commits: layer 1 of `spec/cead.tla`, after its questions are answered.
+
+## 1zeroone0 · 2026-09-28T03:35:29Z
+
+`c879be2`
+
+1. **Built** — Vocabulary renamed to its OSTEP and ocap lineage: step → **call** (a system call into the harness; `rlm` and `finish` are cead's, every other call a well-known CLI); **call table** is the system call table, the toolset; budget → **meter** (KeyKOS: spend charged to every meter above, parent can cap or revoke); verdict → **decision** (allow, deny); receipt → **audit record** (Linux audit: several records, one event id); backend → **VMM**; observer → **tracer**; contract → **interface**; declaration → **manifest**. **process** is an OS process with OSTEP's states. New: **crash**, **executed**, **message**. README follows.
+2. **Why** — The thesis is literal: the harness is the model's kernel, the call table its system call table. Native terms carry their meaning for free. Meter charges upward instead of splitting a budget ahead of time: same guarantee, no pre-split arithmetic, no leftovers to return.
+3. **Bloat** — Eight rows removed, eleven added; CODE.md +504 bytes, all in the table. "Two calls" stated once, in the call row, not also in Boundaries; the call table's job stated once, in Boundaries.
+4. **Drift** — README renamed to match. Horizon comments still use the old nouns; the re-cut this PR requires fixes them. AGENTS.md's "the comments its receipts" is plain English, not the retired noun; left.
+5. **Trust surface** — Prose. KeyKOS meter semantics verified (Bomberger & Hardy, "The KeyKOS Nanokernel Architecture"): usage is subtracted from the meter and each superior.
+6. **How it breaks** — "call" now means every command; old text or habits reading it as only `rlm`/`finish` will misread. Horizon until re-cut.
+7. **Not confident** — `manifest` may collide with OCI's image manifest in conversation, since the task image has one too. `window` kept though not native.
+8. **Verify yourself** — The call, meter and process rows; README Workloads.
+9. **Next steps** — Additional commits: layer 1 of `spec/cead.tla`.
+
+## 1zeroone0 · 2026-09-28T05:09:32Z
+
+`7702371`
+
+1. **Built** — `spec/cead.tla` and `cead.cfg`, layer 1. Machine: off → up → exiting → evicted. Process: initial → running ⇄ blocked → zombie. Each call: intent sent and acknowledged by the log, then policy decides; allow executes and the tracer witnesses. Every message is one link in the machine's chain (`seq`). The machine signs its exit record (`finish`, `timeout`) and waits for it to be acknowledged; a crash or the host's hard kill leaves none. Messages can be lost, delayed, reordered, duplicated; anything on the path, the host included, can forge. The log is a set of links that accepts only the machine's signature.
+2. **Why** — One trusted signer (the machine); the host is trusted for availability only, so the confidential backend reuses this design with key secrecy guaranteed by its processor instead of assumed. The chain, not arrival order, is the order. Forgery is modelled as arrival at the log, since a forgery affects nothing before it: same behaviours, no state blowup. Rejected: the host writing the exit record (an untrusted party's claim on the confidential backend); the log as a sequence (tracks an order we declared meaningless; ~10× the states).
+3. **Bloat** — Crash, host kill, reap and timeout share two operators (`Evict`, `Exit`). `OnePerSeq` removed: implied by `Unambiguous` once the log is a set.
+4. **Drift** — None in this commit; the vocabulary for it lands next.
+5. **Trust surface** — TLC 2.19, all green: 2 cmds/1 denied/3 calls (1,888,819 states, 1m51s, the committed cfg); 2 calls with 1 denied (47,219), permit-all (116,963), deny-all (8,579). Every property has a mutation that TLC catches: intent first, only machine, job ends, executed once, finish honest, deny never runs, log only gains, unambiguous, complete; the call limit is caught by `TypeOK`. Not covered: past 3 calls; more than one process (layer 2); what an allowed command does; key theft (assumed away, so first-wins is never exercised).
+6. **How it breaks** — Liveness rests on `WF_vars(HostKill)`: a host that never kills leaves a job running forever. A timeout cuts a call off mid-flight by design. The log is complete only with an exit record; otherwise unknown.
+7. **Not confident** — `Policy` as the constant (a decision depends only on the command). Machine state `exiting` and process state `initial` as names. The small scope hypothesis for bounds of 3.
+8. **Verify yourself** — `Decide` and `Exit`; properties 8 (`Unambiguous`) and 10 (`Complete`).
+9. **Next steps** — Additional commits: vocabulary (job, processor, the security triad, crash, log). Then layers 2 and 3, and the Horizon re-cut.
+
+## 1zeroone0 · 2026-09-28T05:09:35Z
+
+`d7d7438`
+
+1. **Built** — Vocabulary: `run` → **job** (one query's work across boots; `cead run` stays the verb); **processor** (what a process runs on: the CPU for the machine, the inference engine for the model's process); **confidentiality**, **integrity**, **availability**, each with one guarantor; **crash** and **log** redefined for the machine-signed chain; **message** as a chain link. README's noun uses of "run" become "job". Nouns the spec models get `spec/cead.tla` as their home.
+2. **Why** — Linux names everything within a boot and nothing across boots; recovery makes a job span boots, so the noun follows the log. The triad names who guarantees what, so types can carry it (integrity as a typestate, like the sealed memfd).
+3. **Bloat** — One row removed, four added; +763 bytes, all in the table.
+4. **Drift** — Horizon comments still say run, budget, receipt and others; the re-cut this PR requires fixes them.
+5. **Trust surface** — Prose.
+6. **How it breaks** — "job" collides with shell job control inside the model's shell; different level, but a reader may conflate.
+7. **Not confident** — **processor** spans two levels by design; "model endpoint" may later reduce to a processor's address.
+8. **Verify yourself** — The job, log and processor rows.
+9. **Next steps** — Additional commits: layer 2 (the `rlm` tree and meters), layer 3 (fork and recovery), the Horizon re-cut. Consensus discussion first.
+
+## 1zeroone0 · 2026-09-28T05:29:56Z
+
+`a272ef0`
+
+1. **Built** — Vocabulary: **model** (weights running on an engine), **weights**, **engine** (executes the weights and signs, the machine's counterpart), **scheduler** (what runs where; availability only; consensus once there is more than one), **console** (the operator's `cead` with no verb). **host** now level-relative: what runs a machine or an engine. **processor**: the GPU is a coprocessor to the model's process. **log**: one writer per chain, never consensus. "model endpoint" removed. README: the host relays inference encrypted end to end between harness and engine; API keys never reach the model's processes. Description gains the layer-1 limitation.
+2. **Why** — The two sides mirror: pinned program (task image / weights), signing executor (machine / engine), availability-only host and scheduler, processor (CPU / GPU). One noun per role, level-relative like process and processor. "console" ends the collision between the model's shell and the operator's. Rejected: "control plane" (not native), "model host" (a second noun for host).
+3. **Bloat** — One row removed, five added; +641 bytes, all in the table.
+4. **Drift** — README's proxy and endpoint lines rewritten. The memory-hierarchy Horizon comment gets the crosswalk in the re-cut.
+5. **Trust surface** — Prose.
+6. **How it breaks** — Moving the API key from the host into the harness is a real security change: it must be as far from the model's processes as the signing key, decided in the harness's PR.
+7. **Not confident** — "engine" as vLLM by default names a product in a noun's definition.
+8. **Verify yourself** — The host, model and scheduler rows; README Network.
+9. **Next steps** — Additional commits: layer 2 (`rlm` and meters), the engine's chain, layer 3 (fork and recovery), the Horizon re-cut.
+
+## 1zeroone0 · 2026-09-28T05:32:11Z
+
+`dc9b03c`
+
+1. **Built** — The model row and README Identity: the machine holds only a token scoped to its job, never a long-lived API key. Description: hosted APIs are a stated limit.
+2. **Why** — `a272ef0` put the long-lived key in the harness, on the same kernel as the model's processes: a step backwards against the README's main adversary, paid on every backend for a gain mostly on the confidential one. A job-scoped token (minted by the scheduler, bound to one job, expiring with it, capped by its meter) is an attenuated capability: a leak costs one job's meter. End-to-end TLS stays.
+3. **Bloat** — None; two lines rewritten.
+4. **Drift** — Corrects `a272ef0`.
+5. **Trust surface** — Prose. Whether self-hosted engines (vLLM, Dynamo) can verify job-scoped tokens is unverified.
+6. **How it breaks** — Hosted APIs cannot honor such tokens: the host gateway holds the real key and ends TLS, so the model's words there are as trustworthy as the gateway.
+7. **Not confident** — Token minting by the scheduler presumes a scheduler that exists per job; true for the console, not yet designed.
+8. **Verify yourself** — README Identity; the model row.
+9. **Next steps** — Additional commits: layer 2, the engine's chain, layer 3, the Horizon re-cut.
+
+## 1zeroone0 · 2026-09-29T02:08:00Z
+
+`6bb45c9`
+
+1. **Built** — Confidential-first, in prose. README: thesis sentence; the host untrusted by default, trusted only to keep jobs running; the first interface is the boot contract (measured boot, content-addressed disks, attestation, devices as untrusted input); Hardware and Dependencies name Cloud Hypervisor attested on SEV-SNP, and Firecracker and Virtualization.framework unattested. CODE.md: **boot** (Linux `boot_id`: one key, one report, one chain) and **report** (Linux TSM report: first link of every chain, binding the boot's key, and for a fork the parent's chain head, to the manifest's measurement); log, confidentiality, integrity, snapshot, VMM follow. Description rewritten: layers renumbered (2 is boot, fork, recovery; 3 is `rlm` and meters); inference out, to Horizon.
+2. **Why** — A confidential VM without the harness is what clouds sell; a sandbox without attestation is what sandbox companies sell. The pairing is the differentiator, because an agent is the first workload whose record matters as much as its outcome and that can lie about it. Rejected: a Relay noun (the host is already the Dolev–Yao network in the spec; the DPU is a position it can occupy); "boot record" (TSM report is Linux's own term); dropping Firecracker and Virtualization.framework (they are sequenced after, not cut).
+3. **Bloat** — Two rows added; five rewritten in place. No new section.
+4. **Drift** — README's verb "report" became "say" and "record" so the noun has one meaning. Horizon still describes the confidential backend as a side option with fork excluded; the re-cut this PR requires fixes it.
+5. **Trust surface** — Prose. Verified: configfs-tsm `inblob` takes up to 64 bytes of caller data and appeared in Linux v6.7 (kernel ABI docs); Cloud Hypervisor v52.0 (2026-05-14) runs SEV-SNP guests on KVM with measured boot; v53.0 adds nothing for SNP snapshot; Firecracker's SEV issue #2332 is closed without support. Unverified: attested snapshot and fork on any VMM.
+6. **How it breaks** — The README now claims the host cannot read or forge a job, which is true only of an attested boot; it says unattested runs say so, and nothing yet makes them.
+7. **Not confident** — Whether 64 bytes of `inblob` holds the key's hash and the parent's chain head together (two 32-byte hashes fit exactly, leaving no room for a nonce).
+8. **Verify yourself** — README's opening and Identity; the boot, report and log rows.
+9. **Next steps** — Additional commits: layer 1 revised (the report as link 1, both modes), then layer 2, layer 3, the Horizon re-cut.
+
+## 1zeroone0 · 2026-09-29T02:30:25Z
+
+`f386585`
+
+1. **Built** — Layer 1 revised. `Boot` sends the report (seq 1, signed by the processor, naming the machine's key) and waits for acknowledgment; new action `Start` runs the root process only once the log holds it. `sender` becomes `key` (`machine`, `path`, and `processor` for reports only). The log accepts a report only if the processor signed it, and any other link only under a key a logged report vouched for. The header names the assumptions and their guarantor per mode: `KeySecret`, `KeyBound`; availability stays the host's; the path is a Dolev–Yao network. New property 11, `ReportFirst`.
+2. **Why** — The log trusted a hard-coded name; now it learns the key from the processor, which is what attestation is. Layer 2 needs it: many boots, a new key each. Rejected: an `Attested` constant. The two modes are one protocol; only who guarantees `KeyBound` differs, which is outside the model, so TLC would check identical state spaces twice.
+3. **Bloat** — `Senders` replaced by `Keys` and `Signers`; `OnlyMachine` restated, not added to. One action, one property, one helper (`Vouched`) added.
+4. **Drift** — Description: the "both modes" merge requirement replaced by the header one; the modes stated as a measured comparison.
+5. **Trust surface** — TLC 2.19, green: 2 calls 94,469 distinct states (was 47,219); 3 calls, the committed cfg, 3,777,669 (was 1,888,819) in 6m15s (was ~2 min). Every property has a mutation TLC catches, at 2 calls: IntentFirst, LogOnlyGrows, DenyNeverRuns, WithinLimit (via TypeOK), JobEnds, OnlyMachine twice (link without a vouched key; report not from the processor), ExecutedOnce, Unambiguous, FinishHonest, Complete, ReportFirst. Not covered: a forged report is only ever rejected, because the processor's key is assumed; more than one boot (layer 2).
+6. **How it breaks** — A timeout while the report is pending replaces it with the exit record: that boot's chain can never be accepted, so the job ends only by the host's kill. Correct (unknown), but it is a real path to an unprovable job.
+7. **Not confident** — `Start` as a separate action from `Boot`, versus the process state `initial` alone carrying it. The committed cfg now takes 6 minutes; layer 2 may force iterating at 2 calls only.
+8. **Verify yourself** — `Arrive` and `Vouched`; the header's assumptions.
+9. **Next steps** — Additional commits: layer 2 (boot, fork, recovery), after its state and actions are settled in conversation.
+
+## 1zeroone0 · 2026-09-29T02:45:25Z
+
+`3c04b05`
+
+1. **Built** — Vocabulary consolidated around Linux audit's unit. **record** (report, intent, decision, witness, exit; a call's three share its id, as Linux audit's records share an event) replaces `audit record` and `message`. **boot** absorbs the hash chain and gains **complete** and **unknown**; `crash` is deleted. **snapshot** gains **fork** and **recovery** as bold terms. `log`, `report`, `job`, `integrity`, `harness`, `VMM`, `executed` follow; "no verb opens the console" is said once, in `console`. Spec renamed to match: `Message` → `Record`, `messages` → `transit`, `part` → `type`.
+2. **Why** — Layer 2 was about to add chain, link, head, fork and recovery as rows. They named one thing at different moments; Linux audit already has one noun for every entry, distinguished by type. Rejected: `chain` as a noun (a boot is one chain; two nouns for one span) and "a boot's log" (two sizes of `log`).
+3. **Bloat** — Rows: three deleted, one added, net −2; none planned for layer 2.
+4. **Drift** — README: records, not messages or audit records. `crash` said "the job is unknown"; a boot is what is unknown.
+5. **Trust surface** — TLC 2.19 at 2 calls: 94,469 distinct states, identical to before the rename, so no behaviour changed.
+6. **How it breaks** — "record" is a generic word; a reader may take it as any log line rather than a signed one.
+7. **Not confident** — Whether `transit` reads well as a variable name.
+8. **Verify yourself** — The boot, log, record and snapshot rows.
+9. **Next steps** — Additional commits: layer 2 (boot, fork, recovery).
+
+## 1zeroone0 · 2026-09-29T04:05:12Z
+
+`376ef4b`
+
+1. **Built** — Layer 2. Per-boot state is a function over `Boots`; each boot is its own key. `Snapshot(b)`: between calls, once the log holds every record so far. `BootFrom(b, s, o)`: a fork (new job) or a recovery (same job, only once its boot is unknown); the report names the parent boot and its last record. The log keeps a recovery only while its parent is not complete and only the first per parent, and then **fences** the parent: no record of the parent's after it. New properties: 12 `Rooted` (a fork or recovery names a record the log holds), 13 `OneOutcome` (a recovered boot is never complete; no two boots of one job run at once). The `snapshot` row gains fencing.
+2. **Why** — Fencing fell out of the model: a crashed boot's exit record can arrive after its recovery starts, giving one job two outcomes. Q10's "no key reuse" needed no mechanism: a report is place 1 of its boot's hash chain, and first-wins already refuses a second. Rejected: modelling loss as removal from `transit`, which made TLC enumerate every subset (10+ min at the smallest bound).
+3. **Bloat** — Deleted `Lose` and `Resend` from both layers: a record once sent stays in transit; never delivered is lost, delivered twice is a duplicate first-wins ignores. Forgery copies a record in transit and signs it as the path, instead of enumerating every record. `WithinLimit` folded into `TypeOK`, which was already what caught it.
+4. **Drift** — `JobEnds` → `BootEnds`: it is per boot, and a job can span boots.
+5. **Trust surface** — TLC 2.19, green: 1 call/2 boots 80,513 distinct states (5 s); 2 calls/2 boots, the committed cfg, 4,492,977 (8m57s); 1 call/3 boots with one command, permit-all, 19,482,379 (46m43s). 18 mutations, all caught: each layer-1 property (at 1 call/2 boots), plus `Rooted` (snapshot without waiting for the log) and `OneOutcome` four ways (no fence; recovering a complete boot; recovering a live boot; a second recovery, which needs 3 boots). Not covered: 2 calls with 3 boots (estimated hours); recovery of a recovery beyond 3 boots; what a snapshot contains beyond calls and its last record.
+6. **How it breaks** — A boot that finished but whose exit record arrived after its recovery's report is recorded unknown forever. Correct under fencing, and a real, measurable loss.
+7. **Not confident** — `transit` never shrinks, so any spec that later needs "the path lost it" as an event cannot say so. `Snapshot` only saves `calls`; layer 3 must save the process tree.
+8. **Verify yourself** — `Arrive`'s recovery branch and fence; `OneOutcome`.
+9. **Next steps** — Additional commits: layer 3 (`rlm`, processors, meters), then the Horizon re-cut.
+
+## 1zeroone0 · 2026-09-29T04:28:17Z
+
+`7225157`
+
+1. **Built** — `rlm` → **`agent`**; `finish` deleted: a process ends when the model replies without a command, and the reply is its stdout. cead adds one call. Machine-level terms lose parent and child: a report names **the snapshot it booted from** (spec field `parent` → `from`, `head` → `last`); a recovery **fences the boot it recovers**. `limit` gains depth. `process`: its end, its reply, and a PID namespace per spawn so `kill` reaches only descendants. `descriptor` and `meter`: attenuated when spawned, revoked by `kill`. `processor`: the boot sees the model's processors as virtual, like vCPUs. `scheduler`: Kubernetes for machines, Dynamo for engines. README: "Sub-agents, called programmatically"; Reading gains *The Datacenter as a Computer*. Correction to `376ef4b`'s comment: "parent" there means the snapshot's boot.
+2. **Why** — Agent delegation has no canonical shell command; its in-distribution form is a semantics (spawn, wait, list, interrupt, a final reply) that shell job control already carries (`&`, `wait`, `jobs`, `kill`, stdout). Only the spawn verb needed a name; both Claude Code's `Agent` and Codex's `spawn_agent` use this one. The RLM paper's distinction is information flow: a sub-call's output stays in a variable until read; here, a file or shell variable. Rejected: `llm` (a bare model call in its prior), a manifest setting for finish-waits (the model can `wait`; an operator who must require it writes policy), a membrane (Linux cannot revoke a running child's rights; revocation is `kill`).
+3. **Bloat** — One call removed. The membrane staged earlier removed before commit.
+4. **Drift** — Boundaries: "a second call in disguise". The PR description's layer 3 line.
+5. **Trust surface** — Spec renames only: TLC at 1 call/2 boots gives 80,513 distinct states, identical to `376ef4b`.
+6. **How it breaks** — A reply with no command may be the model thinking aloud, not answering; the same ambiguity Claude Code accepts. Measure it in the loop.
+7. **Not confident** — Ending by reply rather than an explicit call; `agent` colliding with a task image's own `agent` binary (core wins on PATH).
+8. **Verify yourself** — The call, process, limit and meter rows; README Workloads.
+9. **Next steps** — Additional commits: layer 3 (sub-agents, processors, meters) under its own cfg, then the Horizon re-cut.
+
+## 1zeroone0 · 2026-09-29T05:11:49Z
+
+`e6aa5c5`
+
+1. **Built** — Layer 3. Per-process state is a record `ps[b, p]` (state, parent, calls, cap, meter, depth, rights, waits, status, by). Machine gains `booting`, which replaces the process state `initial`. Process states are OSTEP's: ready, running, blocked, zombie, plus unused and reaped. New actions: `Dispatch` (the scheduler gives a ready process one of `Processors`), `Exhaust` (meter or call limit reached), `ReapChild`. `Issue` charges the call to every meter up to the root. `Decide` runs `agent` (spawn a child in the foreground or background, with a meter cap in 1..MeterCap, rights ⊆ the parent's, depth − 1; it fails at depth 0 or with no free slot) and `kill` (ends a child and its live descendants). `Finish`: the model replies without a command; the process and its live descendants end. The exit record carries the root's reason: finish, meter, limit or timeout. Snapshots store the process table, with running saved as ready. New assumption `Descendants` (a PID namespace per spawn). New properties: 14 `OnProcessors`, 15 `WithinMeter`, 16 `Attenuated`, 17 `KillReach`. `tree.cfg` checks one boot's tree; `cead.cfg` checks boots. README Reading: the 2nd edition's authors.
+2. **Why** — The model's processor is in the spec now and its evidence is not (phase two). Meters charge upward, so a child's cap may exceed its parent's remaining meter and the root still bounds the tree (KeyKOS: no pre-split arithmetic). Revocation is `kill` because Linux cannot revoke a running child's rights. Rejected: checking the tree and boots in one cfg; a process state `initial` (a boot state, `booting`, says it once for all its processes).
+3. **Bloat** — Process `initial` removed; `WithinLimit` still lives in `TypeOK`. Per-process fields are one record, not ten variables.
+4. **Drift** — CODE.md TLA+: a layer may get its own cfg over the same module.
+5. **Trust surface** — TLC 2.19, green: `cead.cfg` (1 call, 2 boots, meter not binding) 437,752 distinct states, 30 s; `tree.cfg` (2 processes, depth 1, 2 calls, 1 processor) 783,076, 44 s. Mutations, all caught (26): every earlier property; `OnProcessors` (no processor check), `WithinMeter` (charge only one's own meter), `Attenuated` (depth not reduced; rights from outside the parent's, which needs 3 processes), `KillReach` (kill any live process, caught at 2 and 3 processes). Receipt runs: 3 processes, depth 2, `agent` and `kill` only, stopped past 11M states with no violation, not exhausted. Not covered: 2 calls with 2 boots against the layer-3 spec (a receipt run before ready); starvation (no fairness on `Dispatch`: the scheduler is trusted for availability only); what a meter unit is.
+6. **How it breaks** — A process cut off mid-call leaves an intent with no decision; the log shows it, and the boot is still complete if its exit record follows with no gap. A parent that narrows its own rights later does not narrow its running children (Linux; stated in the `descriptor` row).
+7. **Not confident** — Snapshot saves running as ready: right for the real system (in-flight inference does not survive a snapshot), but it is a modelling choice made partly for state count. `booting` as a machine state name.
+8. **Verify yourself** — `Decide`'s `agent` and `kill` branches; `Issue`'s charge; property 15.
+9. **Next steps** — Additional commits: the Horizon re-cut; a 2-call, 2-boot receipt run; fold the comments into the description.
+
+## 1zeroone0 · 2026-09-29T05:41:13Z
+
+`39fe169`
+
+1. **Built** — README rewritten for scanning: bold-led bullets, short lines, headers kept (Hardware → Hosts). Boot steps gain the report; the file-fates table folds into them. The fan-out table is keyed by mechanism (scale-out, fork, `agent`), not use.
+2. **Why** — The README is a whiteboard of what cead is and how it works. What it is for, how it is tested, and what is unproven live in PRs and Horizon. No status line, no placeholders, nothing that points outside itself: nothing to drift.
+3. **Bloat** — Cut: every "comes with the first release" placeholder; Postgres; "one host with both processors"; the console's verb list; cost per call; SWE-bench compatibility; "devices are untrusted input" in the interfaces table. Each lives in a Horizon comment. Merged: the kernel paragraphs; the host's trust (said once); the context window (said once); SQLite into state.
+4. **Drift** — Fixed claims the spec contradicts: keys (the boot's signing key is in the machine); "same manifest, same machine"; "encrypted end to end" (not for hosted APIs); "a pushed checkout" (no network); "three records per call" (a denial has two); CAP_BPF (init holds it); the record "trusts neither model nor harness" (the harness writes it); the host can drop records.
+5. **Trust surface** — Prose. Every claim checked against `spec/cead.tla` and CODE.md.
+6. **How it breaks** — The README now says nothing about readiness; a reader cannot tell it is unbuilt without the repo's history.
+7. **Not confident** — Keeping "Authority is per tool" and Reading, which are the least whiteboard-like.
+8. **Verify yourself** — What cead is; Identity's keys bullet; Network.
+9. **Next steps** — Additional commits: none. Finish the 2-call receipt run, fold it into the description, mark ready.
