@@ -6,6 +6,8 @@ Push every invariant you can into the types, cover the rest with tests, and spen
 
 Spec, skeleton, fill. TLA+, Lean and Rust are one pipeline, not alternatives: TLA+ specifies the system (processes and how they interleave), Lean specifies a core (a pure function and its properties), Rust is the system.
 
+They are a conversation about the theory of the problem, not a factory. None is the source the others derive from: each stabilizes what it can (vocabulary, states, custody, proofs), so what cannot be stabilized becomes visible, such as a translation that loses something, model-facing text, or two artifacts that each agree with themselves but not with each other. Finding those places and bringing them to Roone is the work; building toward a pipeline that runs without him is not. When in doubt, ask.
+
 0. **Scope.** Numbered questions, one recommendation each; facts fetched before asking; each decision written into the PR description.
 1. **Spec.** `spec/cead.tla` states what every behaviour of cead satisfies. Coarse and revisable, never looser than the system: a behaviour the spec allows and the system cannot have is a wall, so the spec changes.
 2. **Slice.** A PR takes a slice of the spec. Its dependencies are probed while scoping; findings go in a PR comment, the probe is never committed.
