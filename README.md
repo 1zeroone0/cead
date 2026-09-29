@@ -153,7 +153,7 @@ Firecracker and Virtualization.framework boot it unattested, so the harness runs
 
 The model's processes have no network.
 The machine reaches the host over vsock only.
-The host relays inference, encrypted between the harness and the engine, and the machine's messages to the log.
+The host relays inference, encrypted between the harness and the engine, and the machine's records to the log.
 Rules beyond that come with the first release.
 
 ### Workloads
@@ -187,6 +187,6 @@ Rules beyond that come with the first release.
 - eBPF records what the model's processes do: which programs they start, which files they read, and each request to the engine.
 - Every action has a cause.
   The tracer is keyed by cgroup, so each action is attributed to the command that caused it, however many processes that command spawned.
-- The log is one audit record per call, held outside the machine.
+- The log holds the machine's records, three per call, outside the machine.
   The operator reads it from the CLI, live during a job and after.
 - Cost per call is a first-release measurement.
