@@ -1,0 +1,32 @@
+# #14 comments
+
+## 1zeroone0 · 2026-09-29T18:22:59Z
+
+**974f5ea: Carry the scope skill in the repo, readable by Codex and Claude Code alike**
+
+1. **Built**: the skill at `.agents/skills/scope/SKILL.md`; the symlink `.claude/skills → ../.agents/skills`; `.gitignore` re-including only `.claude/skills`; one line in AGENTS.md.
+2. **Why**: a clone anywhere should scope the way this machine does. `.agents/skills` is Codex's repo location (per the Codex docs) and `.claude/skills` is Claude Code's; linking the directory mirrors `CLAUDE.md → AGENTS.md`.
+   - Rejected: a link per skill, which is more links to keep; and keeping the skill only in `~/dev`, which a clone never sees.
+3. **Bloat**: none.
+4. **Drift**: the skill text is copied from `~/dev/skills/scope`. Until Roone decides, two copies exist, and the repo's has the new paragraph.
+5. **Trust surface**: untested. Whether each tool follows a symlinked skills directory is a merge requirement to check in a fresh clone.
+6. **How it breaks**:
+   - A tool that doesn't follow directory symlinks sees no skills.
+   - In this repo Claude Code may list both the personal and the repo `scope`.
+7. **Not confident**: which copy Claude Code prefers when both exist.
+8. **Verify yourself**: the `.gitignore` negation.
+9. **Next steps**: finished once verified in a fresh clone.
+
+## 1zeroone0 · 2026-09-29T18:27:08Z
+
+**23ffdbc: Make the repo's skill cead's own: slice, the method's first step**
+
+1. **Built**: `scope` → `slice`, rewritten for cead: target and reads (spec files included); the slice named in the destination; a checklist per round (spec, Lean scalpel, shape, nouns and types, thesis, dependencies, structure); write-back with a `Spec:` line.
+2. **Why**: Roone keeps the general `scope` for any work. A distinct name means no collision, and CODE.md's own word for a PR's part of the spec was already "slice".
+3. **Bloat**: one skill, not two copies of `scope`.
+4. **Drift**: the handoff for #13 now says `/slice 13`.
+5. **Trust surface**: a fresh clone from GitHub was verified with both tools (see the description).
+6. **How it breaks**: a tool that stops following directory symlinks. Checked for both today.
+7. **Not confident**: whether the round checklist is too long for small PRs. "What applies" is meant to let it shrink.
+8. **Verify yourself**: the Rounds checklist.
+9. **Next steps**: finished; ready for review.
