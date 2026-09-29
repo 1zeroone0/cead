@@ -14,18 +14,28 @@ pub(crate) mod init {
     pub(crate) struct Key([u8; 32]);
 
     impl Key {
-        /// A fresh key for a fresh boot.
-        pub(crate) fn generate() -> Key {
-            todo!()
+        /// A fresh key for a fresh boot, from the kernel's random source.
+        pub(crate) fn generate() -> std::io::Result<Key> {
+            use std::io::Read;
+            let mut secret = [0; 32];
+            File::open("/dev/urandom")?.read_exact(&mut secret)?;
+            Ok(Key(secret))
         }
 
         /// The public half, which names the boot.
         pub(crate) fn boot(&self) -> Boot {
-            todo!()
+            Boot::of(&self.0)
         }
 
         pub(crate) fn sign(&self, bytes: &[u8]) -> Signature {
-            todo!()
+            crate::record::sign(&self.0, bytes)
+        }
+    }
+
+    impl Drop for Key {
+        /// The secret does not outlive the boot's init.
+        fn drop(&mut self) {
+            self.0.fill(0);
         }
     }
 

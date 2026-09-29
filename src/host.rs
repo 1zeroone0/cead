@@ -45,37 +45,53 @@ pub(crate) mod job {
 /// The log: every boot's records, held outside the machine. `spec/cead.tla`'s
 /// `Arrive` and `spec/Cead/Log.lean`'s `accept`.
 pub(crate) mod log {
-    use crate::record::{Boot, Record, Signature, Signed};
+    use crate::record::{Attestation, Body, Boot, Exit, Origin, Record, Signature, Signed};
     use std::collections::{BTreeSet, HashMap};
     use std::fs::File;
+    use std::io::Write;
     use std::path::PathBuf;
 
-    /// Who guarantees the header's assumptions: the processor, or the host.
-    pub(crate) enum Mode {
-        Attested,
-        TrustedHost,
-    }
-
     /// A record whose signature checked against its boot's key and, for a
-    /// report, whose attestation checked for the mode. The only kind `accept`
-    /// takes.
+    /// report, whose attestation this build can vouch for: the only kind
+    /// `accept` takes. Trusted-host mode only: a report must say
+    /// `Unattested`, since checking an SNP report is the confidential
+    /// machine's PR.
+    #[derive(Debug)]
     pub(crate) struct Verified {
         record: Record,
         bytes: Vec<u8>,
         signature: Signature,
     }
 
-    /// A record signed by no one it names, or attested wrongly for the mode.
+    /// A record signed by no one it names, malformed, or attested in a way
+    /// this build cannot check.
+    #[derive(Debug)]
     pub(crate) struct Forged;
 
     impl Verified {
-        pub(crate) fn verify(signed: Signed, mode: &Mode) -> Result<Verified, Forged> {
-            todo!()
+        pub(crate) fn verify(signed: Signed) -> Result<Verified, Forged> {
+            let record = Record::decode(signed.bytes()).map_err(|_| Forged)?;
+            if let Body::Report { attestation: Attestation::Snp(_), .. } = record.body() {
+                return Err(Forged);
+            }
+            if !record.boot().verifies(signed.bytes(), signed.signature()) {
+                return Err(Forged);
+            }
+            let (bytes, signature) = signed.into_parts();
+            Ok(Verified { record, bytes, signature })
+        }
+
+        /// A record taken as verified, for tests of what follows verification.
+        #[cfg(test)]
+        pub(crate) fn assume(record: Record) -> Verified {
+            let bytes = record.encode();
+            Verified { record, bytes, signature: Signature::new([0; 64]) }
         }
     }
 
-    /// One JSON-lines file per boot, append-only. Owned by the operator's `cead`
-    /// for the life of the job.
+    /// One file per boot, a line per kept record: its encoding and signature,
+    /// in hex. The format `spec/Cead/Differential.lean`'s `replay` reads.
+    /// Owned by the operator's `cead` for the life of the job.
     pub(crate) struct Log {
         dir: PathBuf,
         boots: HashMap<Boot, BootLog>,
@@ -90,10 +106,12 @@ pub(crate) mod log {
     }
 
     /// Why the log kept nothing: `Admits` in `spec/Cead/Log.lean`, case by case.
+    #[derive(Debug, PartialEq, Eq)]
     pub(crate) enum Refused {
         /// Its place in the boot's sequence is taken: first wins.
         Taken,
-        /// A report not first in its sequence, or a record before its report.
+        /// A report not first in its sequence, or another record at or before
+        /// the report's place.
         OutOfPlace,
         /// A record whose boot's report the log does not hold.
         Unvouched,
@@ -103,16 +121,143 @@ pub(crate) mod log {
         Settled,
         /// A record of a boot a recovery has fenced.
         Fenced,
+        /// The log could not write it: nothing kept, nothing acknowledged, so
+        /// the machine sends it again.
+        Unwritten,
     }
 
     impl Log {
         pub(crate) fn open(dir: PathBuf) -> std::io::Result<Log> {
-            todo!()
+            std::fs::create_dir_all(&dir)?;
+            Ok(Log { dir, boots: HashMap::new() })
+        }
+
+        fn logged(&self, boot: &Boot, seq: u64) -> bool {
+            self.boots.get(boot).is_some_and(|b| b.seqs.contains(&seq))
+        }
+
+        fn settled(&self, boot: &Boot) -> bool {
+            self.boots.get(boot).is_some_and(|b| b.exited || b.recovered)
         }
 
         /// Keeps the record, or says why not. Keeping it acknowledges it.
-        pub(crate) fn accept(&mut self, record: Verified) -> Result<(), Refused> {
-            todo!()
+        pub(crate) fn accept(&mut self, v: Verified) -> Result<(), Refused> {
+            let (boot, seq) = (v.record.boot(), v.record.seq());
+            if self.logged(boot, seq) {
+                return Err(Refused::Taken);
+            }
+            match v.record.body() {
+                Body::Report { origin, .. } => {
+                    if seq != 1 {
+                        return Err(Refused::OutOfPlace);
+                    }
+                    match origin {
+                        Origin::Run => {}
+                        Origin::Fork { boot: from, last } => {
+                            if !self.logged(from, *last) {
+                                return Err(Refused::Unrooted);
+                            }
+                        }
+                        Origin::Recovery { boot: from, last } => {
+                            if !self.logged(from, *last) {
+                                return Err(Refused::Unrooted);
+                            }
+                            if self.settled(from) {
+                                return Err(Refused::Settled);
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    if seq <= 1 {
+                        return Err(Refused::OutOfPlace);
+                    }
+                    if !self.logged(boot, 1) {
+                        return Err(Refused::Unvouched);
+                    }
+                    if self.boots.get(boot).is_some_and(|b| b.recovered) {
+                        return Err(Refused::Fenced);
+                    }
+                }
+            }
+            self.keep(v).map_err(|_| Refused::Unwritten)
+        }
+
+        /// Appends the record to its boot's file, then to what `accept` asks.
+        fn keep(&mut self, v: Verified) -> std::io::Result<()> {
+            let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+            let boot = v.record.boot().clone();
+            if !self.boots.contains_key(&boot) {
+                let path = self.dir.join(format!("{}.log", hex(boot.bytes())));
+                let file = File::options().create(true).append(true).open(path)?;
+                self.boots.insert(boot.clone(), BootLog { file, seqs: BTreeSet::new(), exited: false, recovered: false });
+            }
+            let line = format!("{} {}\n", hex(&v.bytes), hex(v.signature.bytes()));
+            let entry = self.boots.get_mut(&boot).ok_or_else(|| std::io::Error::other("boot vanished"))?;
+            entry.file.write_all(line.as_bytes())?;
+            entry.seqs.insert(v.record.seq());
+            if let Body::Exit(_) = v.record.body() {
+                entry.exited = true;
+            }
+            if let Body::Report { origin: Origin::Recovery { boot: from, .. }, .. } = v.record.body() {
+                if let Some(recovered) = self.boots.get_mut(from) {
+                    recovered.recovered = true;
+                }
+            }
+            Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Log, Verified};
+        use crate::record::Record;
+        use crate::record::tests::{differential, unhex};
+
+        /// Only a record its own boot's key signed gets through, and no SNP
+        /// report yet.
+        #[test]
+        fn verify_refuses_forgeries() {
+            use crate::machine::init::Key;
+            use crate::record::{Attestation, Body, Origin, Signed};
+            let report = |attestation| Body::Report {
+                origin: Origin::Run,
+                measurement: vec![],
+                attestation,
+                prompt: vec![],
+                query: vec![],
+            };
+            let (key, other) = (Key::generate().expect("key"), Key::generate().expect("key"));
+            let bytes = Record::new(key.boot(), 1, report(Attestation::Unattested)).encode();
+            assert!(Verified::verify(Signed::new(bytes.clone(), key.sign(&bytes))).is_ok());
+            assert!(Verified::verify(Signed::new(bytes.clone(), other.sign(&bytes))).is_err());
+            let mut flipped = bytes.clone();
+            flipped[40] ^= 1;
+            assert!(Verified::verify(Signed::new(flipped, key.sign(&bytes))).is_err());
+            let snp = Record::new(key.boot(), 1, report(Attestation::Snp(vec![1]))).encode();
+            assert!(Verified::verify(Signed::new(snp.clone(), key.sign(&snp))).is_err());
+        }
+
+        /// Lean's `accept` and Rust's keep and refuse the same records, run
+        /// after run from an empty log.
+        #[test]
+        fn accept_matches_lean() {
+            let base = std::env::temp_dir().join(format!("cead-log-{}", std::process::id()));
+            let (mut kept, mut refused, mut run) = (0, 0, 0);
+            let mut log = Log::open(base.join("0")).expect("log");
+            for line in differential(&["log", "300", "30", "4"]).lines() {
+                if line == "---" {
+                    run += 1;
+                    log = Log::open(base.join(run.to_string())).expect("log");
+                    continue;
+                }
+                let (hex, lean) = line.split_once(' ').expect("two fields");
+                let record = Record::decode(&unhex(hex)).expect("Lean encodes records");
+                let rust = log.accept(Verified::assume(record));
+                assert_eq!(rust.is_ok(), lean == "kept", "run {run}: {line}: {rust:?}");
+                if rust.is_ok() { kept += 1 } else { refused += 1 }
+            }
+            assert!(kept > 1000 && refused > 1000, "{kept} kept, {refused} refused");
         }
     }
 }

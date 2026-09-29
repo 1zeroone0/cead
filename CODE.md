@@ -62,7 +62,7 @@ Every noun has one home in code: a type, a module, or a subcommand. A noun may p
 | job | One query's work: a root process and its tree. Started by `cead run`. Spans one boot, or more through recovery. | `host::job::run` |
 | key | A boot's signing key: made by init, never copied out of it. | `machine::init::Key` |
 | limit | A cap on one process: calls, window, bound, wall time, depth. The rlimit analogue: set in the fork-exec gap, inherited as a copy. | `host::job::Limits`; `machine::harness::Exhausted` |
-| log | Every boot's records, held outside the machine: one append-only JSON-lines file per boot. Records in transit can be lost, delayed, replayed or forged; the log keeps only what the processor or a boot's key signed, and says why it refuses the rest. A complete boot's records are all it did, and replay its every window; an unknown boot's are true but may be partial. A job's boots link through their reports. One writer per boot: never consensus. | `host::log::Log`, `BootLog`, `Refused`; `spec/Cead/Log.lean` |
+| log | Every boot's records, held outside the machine: one append-only file per boot, a line per record, its encoding and signature in hex. Records in transit can be lost, delayed, replayed or forged; the log keeps only what the processor or a boot's key signed, and says why it refuses the rest. A complete boot's records are all it did, and replay its every window; an unknown boot's are true but may be partial. A job's boots link through their reports. One writer per boot: never consensus. | `host::log::Log`, `BootLog`, `Refused`; `spec/Cead/Log.lean` |
 | machine | The unit: pinned kernel, core, task image, descriptors, call table, policy and model, booted in a microVM by a VMM. Booting until the log holds its report, then up. | `host::vmm::Machine<Booting \| Up>`; `machine` |
 | manifest | The one file that pins a machine by content. Equal manifests are the same experiment; its hashes are the version vector. | `host::job::Manifest`, `BadManifest` |
 | meter | What a process tree may spend, from KeyKOS. A child process's meter hangs below its parent's; every spend is charged to each meter above it, so a tree never outspends its root. A parent caps a child's meter in `agent`'s argv and revokes it with `kill`. What it counts is manifest policy. | `machine::meter::Meters`, `Metered`, `Spent`, `NoParent`; `spec/Cead/Meter.lean` |
@@ -86,7 +86,7 @@ Every noun has one home in code: a type, a module, or a subcommand. A noun may p
 | task image | The tools one task brings: a read-only OCI image with a label declaring its tools, attached at boot. | |
 | tracer | eBPF in the machine's kernel, keyed by cgroup, outside the model's reach. Produces the witness. | |
 | turn | What the model writes on one call: a command, or a reply without one. Logged whole. | `machine::engine::Turn` |
-| verified | A record whose signature checked against its boot's key, and whose attestation checked for the mode: the only kind the log accepts. | `host::log::Verified`, `Forged`, `Mode` |
+| verified | A record whose signature checked against its boot's key, and whose attestation this build can vouch for (trusted-host mode: unattested only): the only kind the log accepts. | `host::log::Verified`, `Forged` |
 | view | What init mounts for the model: the task image as root, the context as a file, a directory for spills. | `machine::init::View` |
 | VMM | What boots a machine: Cloud Hypervisor, attested on SEV-SNP or unattested on KVM; Firecracker and Virtualization.framework, unattested. Same machine, same records; only an attested boot's report is signed. | `host::vmm` |
 | wait status | How a command ended, as `wait(2)` reports it: exited with a code, or signaled. | `record::WaitStatus` |
@@ -122,7 +122,7 @@ Everything else (fields, structs and enums, most traits, invariants like `len â‰
 - Stable toolchain with clippy, pinned in `rust-toolchain.toml`.
 - `Cargo.toml` and `clippy.toml` lints are the rules. `cargo check` on every edit; `cargo clippy --all-targets -- -D warnings` and `cargo test` green before ready. Frontier lints warn, so a draft compiles and a ready PR cannot.
 - eBPF program crates alone lift `unsafe_code`, in their own `Cargo.toml`, visibly.
-- `Cargo.toml` is the allowlist: no new dependency without approval. Preferences: rustix, never libc directly; clap derive; anyhow in binaries, thiserror in libraries; serde. Boundary crates: rustix, aya, seccompiler, landlock.
+- `Cargo.toml` is the allowlist: no new dependency without approval. Preferences: rustix, never libc directly; std and typed errors until a need appears; `serde_json` only where a wire format is JSON (Bedrock). Approved: `ed25519-dalek`, `sha2`, `serde_json`, `rustix`. Boundary crates: rustix, aya, seccompiler, landlock.
 - One published crate, `cead`. When the workspace splits (core, machine, tracer, host, VMMs) members are `publish = false`.
 - Host crates build on macOS: rustix with its libc backend, std, nothing Linux-specific. A Linux-only crate in the host tree is the axis being violated. Machine crates are `#![cfg(target_os = "linux")]` and use linux_raw and Linux-only crates freely.
 - The core is nix-built and static.

@@ -85,6 +85,41 @@ def records (n : Nat) : IO Unit := do
       | none => "-"
     IO.println s!"{hex b} {out}"
 
+/-- One of three boots, so records collide on boots and places. -/
+def poolBoot : IO Boot := do
+  let k := (← IO.rand 1 3).toUInt8
+  return ⟨List.replicate 32 k, by simp⟩
+
+/-- A record aimed at the log's rules: few boots, low places, every kind. -/
+def logRecord : IO Record := do
+  let boot ← poolBoot
+  let body ← match ← IO.rand 0 5 with
+    | 0 => pure (Body.report .run (← blob) .unattested (← blob) (← blob))
+    | 1 => pure (Body.report (.fork (← poolBoot) (← IO.rand 0 4).toUInt64) (← blob) .unattested (← blob) (← blob))
+    | 2 => pure (Body.report (.recovery (← poolBoot) (← IO.rand 0 4).toUInt64) (← blob) .unattested (← blob) (← blob))
+    | 3 => pure (Body.exit .timeout)
+    | _ => pure (Body.call (← u64) (← u64) (← event))
+  -- mostly where each kind belongs, sometimes anywhere
+  let later ← IO.rand 2 4
+  let anywhere ← IO.rand 0 4
+  let usual := if body.isReport then 1 else later
+  let seq := if (← IO.rand 0 3) = 0 then anywhere else usual
+  return ⟨boot, seq.toUInt64, body⟩
+
+/-- Random records offered to `accept` in turn, from an empty log. Each line:
+the record, then `kept` or `refused`; `---` between runs. -/
+def logs (runs len : Nat) : IO Unit := do
+  for _ in [0:runs] do
+    let mut log : Log := []
+    for _ in [0:len] do
+      let r ← logRecord
+      match accept log r with
+      | some log' =>
+        log := log'
+        IO.println s!"{hex r.enc} kept"
+      | none => IO.println s!"{hex r.enc} refused"
+    IO.println "---"
+
 /-- Random spawns and charges from a root. Each line: the operation, Lean's
 verdict, then every meter. -/
 def meters (runs ops : Nat) : IO Unit := do
@@ -150,7 +185,11 @@ def main (args : List String) : IO UInt32 := do
     IO.setRandSeed seed.toNat!
     Cead.Differential.meters runs.toNat! ops.toNat!
     return 0
+  | ["log", runs, len, seed] =>
+    IO.setRandSeed seed.toNat!
+    Cead.Differential.logs runs.toNat! len.toNat!
+    return 0
   | ["replay", log, boot, proc] => Cead.Differential.replay log boot proc.toNat!
   | _ =>
-    IO.eprintln "usage: differential record COUNT SEED | meter RUNS OPS SEED | replay LOG BOOT PROC"
+    IO.eprintln "usage: differential record COUNT SEED | log RUNS LEN SEED | meter RUNS OPS SEED | replay LOG BOOT PROC"
     return 64

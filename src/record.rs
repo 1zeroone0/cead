@@ -22,13 +22,64 @@ pub(crate) struct CallId(u64);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ProcId(u64);
 
+// Ed25519 lives here and nowhere else: `sign` for init's key, `verifies` for
+// the log.
+
+/// Signs `bytes` with the secret half of a boot's key.
+pub(crate) fn sign(secret: &[u8; 32], bytes: &[u8]) -> Signature {
+    use ed25519_dalek::Signer;
+    Signature(ed25519_dalek::SigningKey::from_bytes(secret).sign(bytes).to_bytes())
+}
+
 impl Boot {
     pub(crate) fn new(key: [u8; 32]) -> Boot {
         Boot(key)
     }
 
+    /// The boot whose key has this secret half.
+    pub(crate) fn of(secret: &[u8; 32]) -> Boot {
+        Boot(ed25519_dalek::SigningKey::from_bytes(secret).verifying_key().to_bytes())
+    }
+
     pub(crate) fn bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+
+    /// This boot's key signed `bytes`. Strict: no malleable or small-order
+    /// signatures.
+    pub(crate) fn verifies(&self, bytes: &[u8], signature: &Signature) -> bool {
+        let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&self.0) else {
+            return false;
+        };
+        key.verify_strict(bytes, &ed25519_dalek::Signature::from_bytes(&signature.0)).is_ok()
+    }
+}
+
+impl Signature {
+    pub(crate) fn new(s: [u8; 64]) -> Signature {
+        Signature(s)
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8; 64] {
+        &self.0
+    }
+}
+
+impl Signed {
+    pub(crate) fn new(bytes: Vec<u8>, signature: Signature) -> Signed {
+        Signed { bytes, signature }
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub(crate) fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    pub(crate) fn into_parts(self) -> (Vec<u8>, Signature) {
+        (self.bytes, self.signature)
     }
 }
 
@@ -162,6 +213,10 @@ impl Record {
 
     pub(crate) fn boot(&self) -> &Boot {
         &self.boot
+    }
+
+    pub(crate) fn seq(&self) -> u64 {
+        self.seq
     }
 
     pub(crate) fn body(&self) -> &Body {
