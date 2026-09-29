@@ -22,6 +22,19 @@ pub(crate) struct CallId(u64);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ProcId(u64);
 
+impl ProcId {
+    /// The root process: the one `cead run` starts.
+    pub(crate) const ROOT: ProcId = ProcId(0);
+
+    pub(crate) fn new(n: u64) -> ProcId {
+        ProcId(n)
+    }
+
+    pub(crate) fn get(&self) -> u64 {
+        self.0
+    }
+}
+
 /// One record: its boot, its place in the boot's sequence, what it says.
 /// Owned by whoever holds it: the harness until sent, then the log.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -388,7 +401,7 @@ pub(crate) struct Signed {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::Record;
     use std::process::Command;
 

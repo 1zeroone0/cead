@@ -281,35 +281,111 @@ pub(crate) mod meter {
     use crate::record::ProcId;
 
     /// One process's meter: what it was given, what remains, what it spent.
+    #[derive(Debug)]
     struct Metered {
-        parent: Option<ProcId>,
+        parent: Option<usize>,
         cap: u64,
         meter: u64,
         calls: u64,
     }
 
-    /// Every process's meter, indexed by process number. Owned by the harness.
+    /// Every process's meter, indexed by process number. A child is appended,
+    /// so its parent's number is smaller. Owned by the harness.
+    #[derive(Debug)]
     pub(crate) struct Meters(Vec<Metered>);
 
     /// Some meter from the process up to the root is spent.
+    #[derive(Debug)]
     pub(crate) struct Spent;
 
     /// A spawn under a process that does not exist.
+    #[derive(Debug)]
     pub(crate) struct NoParent;
 
     impl Meters {
         pub(crate) fn root(cap: u64) -> Meters {
-            todo!()
+            Meters(vec![Metered { parent: None, cap, meter: cap, calls: 0 }])
         }
 
         /// A child of `parent` with meter `cap`, numbered next.
-        pub(crate) fn spawn(&mut self, parent: ProcId, cap: u64) -> Result<ProcId, NoParent> {
-            todo!()
+        pub(crate) fn spawn(&mut self, parent: &ProcId, cap: u64) -> Result<ProcId, NoParent> {
+            let parent = usize::try_from(parent.get()).map_err(|_| NoParent)?;
+            if parent >= self.0.len() {
+                return Err(NoParent);
+            }
+            self.0.push(Metered { parent: Some(parent), cap, meter: cap, calls: 0 });
+            Ok(ProcId::new(self.0.len() as u64 - 1))
         }
 
         /// A call by `q`: one unit from every meter up to the root, or none.
-        pub(crate) fn charge(&mut self, q: ProcId) -> Result<(), Spent> {
-            todo!()
+        pub(crate) fn charge(&mut self, q: &ProcId) -> Result<(), Spent> {
+            let q = usize::try_from(q.get()).map_err(|_| Spent)?;
+            if q >= self.0.len() {
+                return Err(Spent);
+            }
+            let chain = self.chain(q);
+            if chain.iter().any(|&a| self.0[a].meter == 0) {
+                return Err(Spent);
+            }
+            for a in chain {
+                self.0[a].meter -= 1;
+            }
+            self.0[q].calls += 1;
+            Ok(())
+        }
+
+        /// `q`, its parent, and so on up to the root.
+        fn chain(&self, q: usize) -> Vec<usize> {
+            let mut chain = vec![q];
+            let mut at = q;
+            while let Some(parent) = self.0[at].parent.filter(|&p| p < at) {
+                chain.push(parent);
+                at = parent;
+            }
+            chain
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::Meters;
+        use crate::record::ProcId;
+        use crate::record::tests::differential;
+
+        /// Lean's random spawns and charges, replayed: every verdict and every
+        /// meter after it agree.
+        #[test]
+        fn meters_match_lean() {
+            let lines = differential(&["meter", "300", "40", "2"]);
+            let mut meters = Meters::root(0);
+            let (mut ok, mut refused) = (0, 0);
+            for line in lines.lines() {
+                // `spawn PA CAP VERDICT [METERS]`, `charge Q VERDICT [METERS]`, `root CAP`
+                let words: Vec<&str> = line.splitn(4, ' ').collect();
+                let n = |i: usize| words[i].parse::<u64>().expect("a number");
+                let (verdict, expected) = match words[0] {
+                    "root" => {
+                        meters = Meters::root(n(1));
+                        continue;
+                    }
+                    "spawn" => {
+                        let rest: Vec<&str> = words[3].splitn(2, ' ').collect();
+                        let got = meters.spawn(&ProcId::new(n(1)), n(2)).is_ok();
+                        (got == (rest[0] == "ok"), rest[1])
+                    }
+                    "charge" => {
+                        let rest: Vec<&str> = line.splitn(4, ' ').skip(2).collect();
+                        let got = meters.charge(&ProcId::new(n(1))).is_ok();
+                        (got == (rest[0] == "ok"), rest[1])
+                    }
+                    other => panic!("unknown operation {other}"),
+                };
+                assert!(verdict, "verdict differs: {line}");
+                let now: Vec<String> = meters.0.iter().map(|m| m.meter.to_string()).collect();
+                assert_eq!(format!("[{}]", now.join(", ")), expected, "{line}");
+                if line.contains(" ok ") { ok += 1 } else { refused += 1 }
+            }
+            assert!(ok > 1000 && refused > 1000, "{ok} ok, {refused} refused");
         }
     }
 }
