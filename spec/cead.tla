@@ -60,13 +60,16 @@ Live      == {"ready", "running", "blocked"}
 \* order the machine sent it, whatever order it arrives in. A report (seq 1,
 \* id 0) names its boot, whose key signs the rest, what started it, and for
 \* a fork or recovery the snapshot it booted from: that boot and its last
-\* record. A call's intent, decision and witness carry its id and command;
-\* the exit record carries id 0, why the boot ended, and the root process's
-\* reply if it finished: the answer, signed.
+\* record. A call's intent, decision and witness carry its id, its command
+\* and the process that made it; a decision that spawns a process names it
+\* as `child`, so the log holds the process tree. The exit record carries
+\* id 0, why the boot ended, and the root process's reply if it finished:
+\* the answer, signed.
 Record == [boot : Boots, seq : 1..MaxSeq, id : 0..MaxId,
            type : CallTypes \cup {"report", "exit"},
            body : Commands \cup Reasons \cup Origins, key : Signers,
-           from : Boots \cup {None}, last : 0..MaxSeq, reply : Replies \cup {None}]
+           from : Boots \cup {None}, last : 0..MaxSeq, reply : Replies \cup {None},
+           proc : Procs \cup {None}, child : Procs \cup {None}]
 
 \* One process, as the harness holds it. `cap` is the meter it was given,
 \* `meter` what remains; `waits` is the child it waits for in the foreground;
@@ -96,7 +99,7 @@ VARIABLES
     ids,        \* per boot: the last call id
     seq,        \* per boot: the machine's last sequence number
     pending,    \* per boot: the report or exit record awaiting acknowledgment, or NoRecord
-    executed,   \* per boot: what the kernel ran, in order: the truth
+    executed,   \* per boot: what the kernel ran, in order, and in which process: the truth
     unwitnessed, \* per boot: calls executed whose command has not yet ended
     job,        \* per boot: the boot that started its job
     snapshots,  \* every snapshot taken: a boot, its last record, its processes
@@ -106,10 +109,12 @@ VARIABLES
 vars == <<machine, ps, intent, ids, seq, pending, executed, unwitnessed, job, snapshots,
           transit, log>>
 
-Rec(b, s, i, t, x) == [boot |-> b, seq |-> s, id |-> i, type |-> t, body |-> x,
-                       key |-> b, from |-> None, last |-> 0, reply |-> None]
+Rec(b, s, i, t, x, p) == [boot |-> b, seq |-> s, id |-> i, type |-> t, body |-> x,
+                          key |-> b, from |-> None, last |-> 0, reply |-> None,
+                          proc |-> p, child |-> None]
 Report(b, o, f, l) == [boot |-> b, seq |-> 1, id |-> 0, type |-> "report", body |-> o,
-                       key |-> "processor", from |-> f, last |-> l, reply |-> None]
+                       key |-> "processor", from |-> f, last |-> l, reply |-> None,
+                       proc |-> None, child |-> None]
 Logged(b, s)        == \E r \in log : r.boot = b /\ r.seq = s
 LoggedType(b, i, t) == \E r \in log : r.boot = b /\ r.id = i /\ r.type = t
 \* The log holds boot b's report: b's key is vouched for.
@@ -219,7 +224,7 @@ Reap(b) ==
     /\ machine[b] = "up"
     /\ ps[b, RootProc].state = "zombie"
     /\ unwitnessed[b] = {}
-    /\ LET r == [Rec(b, seq[b] + 1, 0, "exit", ps[b, RootProc].status) EXCEPT
+    /\ LET r == [Rec(b, seq[b] + 1, 0, "exit", ps[b, RootProc].status, None) EXCEPT
                     !.reply = ps[b, RootProc].reply]
        IN /\ machine' = [machine EXCEPT ![b] = "exiting"]
           /\ seq'     = [seq EXCEPT ![b] = seq[b] + 1]
@@ -275,7 +280,7 @@ Issue(b, p, c) ==
     /\ ps[b, p].state = "running"
     /\ ps[b, p].calls < CallLimit
     /\ Chargeable(b, p)
-    /\ LET r == Rec(b, seq[b] + 1, ids[b] + 1, "intent", c)
+    /\ LET r == Rec(b, seq[b] + 1, ids[b] + 1, "intent", c, p)
            A == {p} \cup Ancestors(b, p)
        IN /\ ps' = [x \in Boots \X Procs |->
                       IF x[1] = b /\ x[2] \in A
@@ -306,26 +311,27 @@ Decide(b, p) ==
            me == ps[b, p]
            Free == {q \in Procs : ps[b, q].state = "unused"}
            Kids == {q \in Procs : ps[b, q].parent = p /\ ps[b, q].state \in Live}
-       IN /\ IF Decision(c) = "allow"
-               THEN /\ executed' = [executed EXCEPT ![b] = Append(@, [id |-> i, cmd |-> c])]
+           D(q) == [Rec(b, s + 1, i, "decision", c, p) EXCEPT !.child = q]
+       IN /\ seq' = [seq EXCEPT ![b] = s + 1]
+          /\ IF Decision(c) = "allow"
+               THEN /\ executed' = [executed EXCEPT ![b] = Append(@, [id |-> i, cmd |-> c, proc |-> p])]
                     /\ unwitnessed' = [unwitnessed EXCEPT ![b] = @ \cup {[id |-> i, cmd |-> c, proc |-> p]}]
-                    /\ transit' = transit \cup {Rec(b, s + 1, i, "decision", c)}
-                    /\ seq' = [seq EXCEPT ![b] = s + 1]
                     /\ IF c = "agent" /\ me.depth > 0 /\ Free # {}
                          THEN \E q \in Free, m \in 1..MeterCap, R \in SUBSET me.rights,
                                  fg \in BOOLEAN :
                                 LET t == [ps EXCEPT ![b, q] = Spawned(p, m, me.depth - 1, R)]
-                                IN ps' = IF fg THEN [t EXCEPT ![b, p].waits = q] ELSE t
+                                IN /\ ps' = IF fg THEN [t EXCEPT ![b, p].waits = q] ELSE t
+                                   /\ transit' = transit \cup {D(q)}
                        ELSE IF c = "kill" /\ Kids # {}
                          THEN \E q \in Kids :
                                 LET t == [Ended(b, q, "killed") EXCEPT ![b, q].by = p]
                                 IN /\ ps' = t
                                    /\ intent' = [CutOff(b, q) EXCEPT ![b, p] = NoRecord]
-                       ELSE ps' = ps
+                                   /\ transit' = transit \cup {D(None)}
+                       ELSE ps' = ps /\ transit' = transit \cup {D(None)}
                ELSE /\ executed' = executed
                     /\ unwitnessed' = unwitnessed
-                    /\ transit' = transit \cup {Rec(b, s + 1, i, "decision", c)}
-                    /\ seq' = [seq EXCEPT ![b] = s + 1]
+                    /\ transit' = transit \cup {D(None)}
                     /\ ps' = [ps EXCEPT ![b, p].state = "ready"]
           /\ (c # "kill" \/ Decision(c) = "deny" \/ Kids = {}) =>
                intent' = [intent EXCEPT ![b, p] = NoRecord]
@@ -342,7 +348,7 @@ Witness(b, e) ==
     /\ ps[b, e.proc].waits = None
     /\ unwitnessed' = [unwitnessed EXCEPT ![b] = @ \ {e}]
     /\ seq' = [seq EXCEPT ![b] = seq[b] + 1]
-    /\ transit' = transit \cup {Rec(b, seq[b] + 1, e.id, "witness", e.cmd)}
+    /\ transit' = transit \cup {Rec(b, seq[b] + 1, e.id, "witness", e.cmd, e.proc)}
     /\ ps' = IF ps[b, e.proc].state = "blocked"
                THEN [ps EXCEPT ![b, e.proc].state = "ready"] ELSE ps
     /\ UNCHANGED <<machine, intent, ids, pending, executed, job, snapshots, log>>
@@ -437,7 +443,7 @@ TypeOK ==
     /\ ids \in [Boots -> 0..MaxId]
     /\ seq \in [Boots -> 0..MaxSeq]
     /\ pending \in [Boots -> Record \cup {NoRecord}]
-    /\ \A b \in Boots : executed[b] \in Seq([id : 1..MaxId, cmd : Commands])
+    /\ \A b \in Boots : executed[b] \in Seq([id : 1..MaxId, cmd : Commands, proc : Procs])
     /\ unwitnessed \in [Boots -> SUBSET [id : 1..MaxId, cmd : Commands, proc : Procs]]
     /\ job \in [Boots -> Boots]
     /\ transit \subseteq Record
@@ -538,5 +544,30 @@ BlockedWaits ==
                  intent[b, p] # NoRecord \/ \E e \in unwitnessed[b] : e.proc = p
             /\ ps[b, p].waits # None =>
                  ps[b, p].state = "blocked" /\ ps[b, ps[b, p].waits].state \in Live \cup {"zombie"}
+
+\* The records boot b sent through its record n, and, if it booted from a
+\* snapshot, that boot's records through the snapshot's last record.
+RECURSIVE Before(_, _)
+Before(b, n) ==
+    LET Sent == {r \in transit \cup log : r.key # "path"}
+        R == {r \in Sent : r.boot = b /\ r.type = "report"}
+        Mine == {r \in Sent : r.boot = b /\ r.seq <= n}
+    IN IF R = {} THEN Mine
+       ELSE LET x == CHOOSE x \in R : TRUE
+            IN IF x.from = None THEN Mine ELSE Mine \cup Before(x.from, x.last)
+
+\* 19. Every logged call names the process that ran it, and a process other
+\*     than the root was spawned earlier in its boot's records, by a
+\*     decision its parent made: the log holds the process tree.
+ProcessTree ==
+    \A r \in log :
+        r.type \in CallTypes =>
+            /\ r.proc \in Procs
+            /\ \A k \in 1..Len(executed[r.boot]) :
+                 executed[r.boot][k].id = r.id => executed[r.boot][k].proc = r.proc
+            /\ r.proc # RootProc =>
+                 \E d \in Before(r.boot, r.seq - 1) :
+                    /\ d.type = "decision" /\ d.child = r.proc
+                    /\ d.proc = ps[r.boot, r.proc].parent
 
 =============================================================================
