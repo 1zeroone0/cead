@@ -97,7 +97,7 @@ VARIABLES
     seq,        \* per boot: the machine's last sequence number
     pending,    \* per boot: the report or exit record awaiting acknowledgment, or NoRecord
     executed,   \* per boot: what the kernel ran, in order: the truth
-    unwitnessed, \* per boot: calls executed whose witness is not yet sent
+    unwitnessed, \* per boot: calls executed whose command has not yet ended
     job,        \* per boot: the boot that started its job
     snapshots,  \* every snapshot taken: a boot, its last record, its processes
     transit,    \* every record sent: each can be lost, delayed, reordered, duplicated
@@ -211,25 +211,30 @@ Snapshot(b) ==
                                         ELSE ps[b, p]]]}
     /\ UNCHANGED <<unwitnessed, machine, ps, intent, ids, seq, pending, executed, job, transit, log>>
 
-\* The machine signs its exit record, its last record, and waits for the log
-\* to acknowledge it. A call awaiting its decision is cut off; every executed
-\* call has been witnessed first, so the exit record never hides a gap.
-Exit(b, reason, reply) ==
+\* The root process has ended and every command has ended and been
+\* witnessed: the machine signs its exit record, its last record, with the
+\* root's reason and reply, and waits for the log to acknowledge it. The exit
+\* record never hides a gap.
+Reap(b) ==
     /\ machine[b] = "up"
+    /\ ps[b, RootProc].state = "zombie"
     /\ unwitnessed[b] = {}
-    /\ LET r == [Rec(b, seq[b] + 1, 0, "exit", reason) EXCEPT !.reply = reply]
+    /\ LET r == [Rec(b, seq[b] + 1, 0, "exit", ps[b, RootProc].status) EXCEPT
+                    !.reply = ps[b, RootProc].reply]
        IN /\ machine' = [machine EXCEPT ![b] = "exiting"]
           /\ seq'     = [seq EXCEPT ![b] = seq[b] + 1]
           /\ pending' = [pending EXCEPT ![b] = r]
           /\ transit' = transit \cup {r}
     /\ UNCHANGED <<unwitnessed, ps, intent, ids, executed, job, snapshots, log>>
 
-\* The root process has ended: the boot exits with its reason and reply.
-Reap(b)    == ps[b, RootProc].state = "zombie" /\
-              Exit(b, ps[b, RootProc].status, ps[b, RootProc].reply)
-\* The machine's own wall-time limit fires. The harness kills running
-\* commands first; each is still witnessed (Witness), then the boot exits.
-Timeout(b) == Exit(b, "timeout", None)
+\* The job's wall-time limit fires: the root process ends, killing every
+\* process below it. Their commands end and are witnessed; then Reap.
+Timeout(b) ==
+    /\ machine[b] = "up"
+    /\ ps[b, RootProc].state \in Live
+    /\ ps' = Ended(b, RootProc, "timeout")
+    /\ intent' = CutOff(b, RootProc)
+    /\ UNCHANGED <<unwitnessed, machine, ids, seq, pending, executed, job, snapshots, transit, log>>
 
 \* The log has the exit record: the machine is gone.
 Leave(b) ==
@@ -286,7 +291,7 @@ Issue(b, p, c) ==
 
 \* The log has acknowledged the intent: the harness checks the call against
 \* policy and sends the decision. Deny returns to the model. Allow starts
-\* the command, whose witness is sent when it ends (Witness).
+\* the command; the process stays blocked until it ends (Witness).
 \* `agent` spawns a child in the foreground (the caller waits) or the
 \* background; it fails if the caller's depth is spent or no slot is free.
 \* `kill` ends one of the caller's live children and its descendants.
@@ -301,43 +306,46 @@ Decide(b, p) ==
            me == ps[b, p]
            Free == {q \in Procs : ps[b, q].state = "unused"}
            Kids == {q \in Procs : ps[b, q].parent = p /\ ps[b, q].state \in Live}
-           Done(t) == [t EXCEPT ![b, p].state = "ready"]
        IN /\ IF Decision(c) = "allow"
                THEN /\ executed' = [executed EXCEPT ![b] = Append(@, [id |-> i, cmd |-> c])]
-                    /\ unwitnessed' = [unwitnessed EXCEPT ![b] = @ \cup {[id |-> i, cmd |-> c]}]
+                    /\ unwitnessed' = [unwitnessed EXCEPT ![b] = @ \cup {[id |-> i, cmd |-> c, proc |-> p]}]
                     /\ transit' = transit \cup {Rec(b, s + 1, i, "decision", c)}
                     /\ seq' = [seq EXCEPT ![b] = s + 1]
                     /\ IF c = "agent" /\ me.depth > 0 /\ Free # {}
                          THEN \E q \in Free, m \in 1..MeterCap, R \in SUBSET me.rights,
                                  fg \in BOOLEAN :
                                 LET t == [ps EXCEPT ![b, q] = Spawned(p, m, me.depth - 1, R)]
-                                IN ps' = IF fg THEN [t EXCEPT ![b, p].waits = q] ELSE Done(t)
+                                IN ps' = IF fg THEN [t EXCEPT ![b, p].waits = q] ELSE t
                        ELSE IF c = "kill" /\ Kids # {}
                          THEN \E q \in Kids :
                                 LET t == [Ended(b, q, "killed") EXCEPT ![b, q].by = p]
-                                IN /\ ps' = Done(t)
+                                IN /\ ps' = t
                                    /\ intent' = [CutOff(b, q) EXCEPT ![b, p] = NoRecord]
-                       ELSE ps' = Done(ps)
+                       ELSE ps' = ps
                ELSE /\ executed' = executed
                     /\ unwitnessed' = unwitnessed
                     /\ transit' = transit \cup {Rec(b, s + 1, i, "decision", c)}
                     /\ seq' = [seq EXCEPT ![b] = s + 1]
-                    /\ ps' = Done(ps)
+                    /\ ps' = [ps EXCEPT ![b, p].state = "ready"]
           /\ (c # "kill" \/ Decision(c) = "deny" \/ Kids = {}) =>
                intent' = [intent EXCEPT ![b, p] = NoRecord]
     /\ UNCHANGED <<machine, ids, pending, job, snapshots, log>>
 
-\* A command ends, however it ends (exit, signal, a kill from its process's
-\* ancestor or the harness): the tracer's witness goes through the harness,
-\* which sequences it. A process's calls are witnessed whatever becomes of
-\* the process.
+\* A command ends, however it ends (exit, signal, a kill from an ancestor
+\* or the harness); a foreground `agent` ends when its child is reaped. The
+\* tracer's witness goes through the harness, which sequences it, and the
+\* process, if still live, is ready again. A killed process's commands are
+\* witnessed too.
 Witness(b, e) ==
     /\ machine[b] = "up"
     /\ e \in unwitnessed[b]
+    /\ ps[b, e.proc].waits = None
     /\ unwitnessed' = [unwitnessed EXCEPT ![b] = @ \ {e}]
     /\ seq' = [seq EXCEPT ![b] = seq[b] + 1]
     /\ transit' = transit \cup {Rec(b, seq[b] + 1, e.id, "witness", e.cmd)}
-    /\ UNCHANGED <<machine, ps, intent, ids, pending, executed, job, snapshots, log>>
+    /\ ps' = IF ps[b, e.proc].state = "blocked"
+               THEN [ps EXCEPT ![b, e.proc].state = "ready"] ELSE ps
+    /\ UNCHANGED <<machine, intent, ids, pending, executed, job, snapshots, log>>
 
 \* The model replies without a command: the process ends, and its running
 \* descendants are killed. The reply is its stdout.
@@ -358,17 +366,15 @@ Exhaust(b, p) ==
     /\ intent' = CutOff(b, p)
     /\ UNCHANGED <<unwitnessed, machine, ids, seq, pending, executed, job, snapshots, transit, log>>
 
-\* The harness reaps an ended child; a parent waiting on it in the
-\* foreground is ready again.
+\* The harness reaps an ended child; a parent's foreground `agent` waiting
+\* on it can now end (Witness).
 ReapChild(b, q) ==
     /\ machine[b] = "up"
     /\ q # RootProc
     /\ ps[b, q].state = "zombie"
     /\ LET p == ps[b, q].parent
            t == [ps EXCEPT ![b, q].state = "reaped"]
-       IN ps' = IF ps[b, p].waits = q /\ ps[b, p].state = "blocked"
-                  THEN [t EXCEPT ![b, p].state = "ready", ![b, p].waits = None]
-                  ELSE t
+       IN ps' = IF ps[b, p].waits = q THEN [t EXCEPT ![b, p].waits = None] ELSE t
     /\ UNCHANGED <<unwitnessed, machine, intent, ids, seq, pending, executed, job, snapshots, transit, log>>
 
 -----------------------------------------------------------------------------
@@ -432,7 +438,7 @@ TypeOK ==
     /\ seq \in [Boots -> 0..MaxSeq]
     /\ pending \in [Boots -> Record \cup {NoRecord}]
     /\ \A b \in Boots : executed[b] \in Seq([id : 1..MaxId, cmd : Commands])
-    /\ unwitnessed \in [Boots -> SUBSET [id : 1..MaxId, cmd : Commands]]
+    /\ unwitnessed \in [Boots -> SUBSET [id : 1..MaxId, cmd : Commands, proc : Procs]]
     /\ job \in [Boots -> Boots]
     /\ transit \subseteq Record
     /\ log \subseteq Record
@@ -522,5 +528,15 @@ Attenuated ==
 KillReach ==
     \A b \in Boots, p \in Procs :
         ps[b, p].status = "killed" => ps[b, p].by \in Ancestors(b, p)
+
+\* 18. A live process is blocked exactly while it waits: on its intent's
+\*     decision, or on its command's end, a foreground `agent` on its child.
+BlockedWaits ==
+    \A b \in Boots, p \in Procs :
+        ps[b, p].state \in Live =>
+            /\ ps[b, p].state = "blocked" <=>
+                 intent[b, p] # NoRecord \/ \E e \in unwitnessed[b] : e.proc = p
+            /\ ps[b, p].waits # None =>
+                 ps[b, p].state = "blocked" /\ ps[b, ps[b, p].waits].state \in Live \cup {"zombie"}
 
 =============================================================================
