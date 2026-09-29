@@ -5,9 +5,8 @@ Push every invariant you can into the types, cover the rest with tests, and spen
 # Method
 
 Spec, skeleton, fill. TLA+, Lean and Rust are one pipeline, not alternatives: TLA+ specifies the system (processes and how they interleave), Lean specifies a core (a pure function and its properties), Rust is the system.
-**Unpracticed until `initial-spec`; confirm the approach for each PR.**
 
-1. **Spec.** `spec/cead.tla` states what every behaviour of cead satisfies. Coarse and revisable: when code disagrees with it, the spec changes in that PR.
+1. **Spec.** `spec/cead.tla` states what every behaviour of cead satisfies. Coarse and revisable.
 2. **Slice.** A PR takes a slice of the spec. Its dependencies are probed while scoping; findings go in a PR comment, the probe is never committed.
 3. **Core.** A pure function with a property worth proving gets its Lean spec first, green before any Rust.
 4. **Skeleton.** One commit of types, signatures, private fields and one doc comment per item (what it owns, when it drops); bodies are `todo!()`; the type gate is green. It is the spec of custody. It mirrors the spec: variables become fields, states become variants or typestates, each action becomes one signature.
@@ -116,11 +115,13 @@ Everything else (fields, structs and enums, most traits, invariants like `len â‰
 
 # TLA+
 
-- Modules are `spec/<name>.tla` with `<name>.cfg`; the system spec is `spec/cead.tla`. A layer whose state multiplies another's gets its own cfg over the same module (`spec/tree.cfg`). TLC is green before any Rust exists; the commit line records the TLA+ tools version and the bounds it passed at.
+- Modules are `spec/<name>.tla` with `<name>.cfg`; the system spec is `spec/cead.tla`. A layer whose state multiplies another's gets its own cfg over the same module (`spec/tree.cfg`). The commit line records the TLA+ tools version and the bounds it passed at.
 - A PR that changes a protocol re-runs TLC, by hand until CI is demanded.
+- Every property has a mutation TLC catches.
+- Committed cfgs run in about a minute; larger bounds are one-off runs recorded in the PR.
 - **spec**: a formula over behaviours of a state machine. **action**: one transition; one signature. **invariant**: what every reachable state satisfies; what TLC checks. **instance**: the bounds TLC searched; a proof only up to them.
 
 # Lean
 
-- Lean 4 via elan, toolchain pinned in `lean-toolchain`, one lake project in `spec/`. `lake build` green before any Rust exists.
-- **spec**: an executable definition. **theorem**: a property proved of it. **differential test**: random inputs through spec and Rust, outputs compared in `cargo test`; the only tie between them. How spec outputs reach `cargo test` is for the first Lean PR.
+- Lean 4 via elan, toolchain pinned in `lean-toolchain`, one lake project in `spec/`. `lake build` green before the Rust it specifies.
+- **spec**: an executable definition. **theorem**: a property proved of it. **differential test**: random inputs through spec and Rust, outputs compared in `cargo test`; the only tie between them.
