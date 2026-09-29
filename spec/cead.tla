@@ -56,7 +56,7 @@ MaxSeq    == 3 * MaxId + 2                              \* the report, every cal
 None      == "none"                                     \* no process, snapshot or reply
 Live      == {"ready", "running", "blocked"}
 
-\* One record of a boot. `seq` is its place in the boot's hash chain: the
+\* One record of a boot. `seq` is its place in the boot's sequence: the
 \* order the machine sent it, whatever order it arrives in. A report (seq 1,
 \* id 0) names its boot, whose key signs the rest, what started it, and for
 \* a fork or recovery the snapshot it booted from: that boot and its last
@@ -392,7 +392,7 @@ ReapChild(b, q) ==
 \* while the boot it recovers is not complete, and only the first for that
 \* boot. It keeps any other record only if its boot's key signed it, the log
 \* holds that boot's report, and no recovery has taken the boot's place. It
-\* keeps the first record for each place in a boot's hash chain; a
+\* keeps the first record for each place in a boot's sequence; a
 \* duplicate or resend changes nothing. First-wins matters only if
 \* KeySecret fails, so TLC never exercises it.
 Arrive(r) ==
@@ -475,8 +475,8 @@ ExecutedOnce ==
     \A b \in Boots : \A j, k \in 1..Len(executed[b]) :
         j # k => executed[b][j].id # executed[b][k].id
 
-\* 8. No boot signs two different records for one place in its hash chain,
-\*    so each chain gives one order.
+\* 8. No boot signs two different records for one place in its sequence,
+\*    so each boot gives one order.
 Unambiguous ==
     LET Seen == {r \in transit : r.key # "path"} \cup log
     IN \A r1, r2 \in Seen : (r1.boot = r2.boot /\ r1.seq = r2.seq) => r1 = r2

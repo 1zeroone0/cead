@@ -33,19 +33,23 @@ def origin : IO Origin := do
 def event : IO Event := do
   match ← IO.rand 0 2 with
   | 0 => return .intent (← blob)
-  | 1 => return .decision (if (← IO.rand 0 1) = 0 then .allow else .deny)
+  | 1 =>
+    match ← IO.rand 0 2 with
+    | 0 => return .decision .deny
+    | 1 => return .decision .allow
+    | _ => return .decision (.spawn (← u64))
   | _ =>
     let code ← byte
-    let ended := if (← IO.rand 0 1) = 0 then Ended.exited code else .signaled code
-    return .witness ended (← blob)
+    let status := if (← IO.rand 0 1) = 0 then WaitStatus.exited code else .signaled code
+    return .witness status (← blob)
 
 def body : IO Body := do
   match ← IO.rand 0 2 with
   | 0 =>
     let report ← blob
-    let evidence := if (← IO.rand 0 1) = 0 then Evidence.unattested else .snp report
-    return .report (← origin) (← blob) evidence
-  | 1 => return .call (← u64) (← event)
+    let attestation := if (← IO.rand 0 1) = 0 then Attestation.unattested else .snp report
+    return .report (← origin) (← blob) attestation
+  | 1 => return .call (← u64) (← u64) (← event)
   | _ =>
     match ← IO.rand 0 3 with
     | 0 => return .exit (.finish (← blob))
@@ -53,7 +57,7 @@ def body : IO Body := do
     | 2 => return .exit .limit
     | _ => return .exit .timeout
 
-def record : IO Record := return ⟨← blob, ← u64, ← blob, ← body⟩
+def record : IO Record := return ⟨← blob, ← u64, ← body⟩
 
 /-- A valid encoding, or one corrupted: a byte changed, cut short, or extended. -/
 def recordBytes : IO Bytes := do

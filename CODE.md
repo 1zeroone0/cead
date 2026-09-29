@@ -34,7 +34,7 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 |---|---|---|
 | authority | How far a binary can go beyond its argv: fixed, launcher, client, interpreter, service. | |
 | availability | The job runs and ends. The host guarantees it, and can always deny it. | `spec/cead.tla` |
-| boot | One life of a machine's kernel, from the VMM starting it to eviction, with one key. Its records form one hash chain signed with that key, its report first. **Complete** when the log holds its records through its exit record with no gap; otherwise **unknown** (crash, host kill, lost report). Linux's `boot_id`. | `spec/cead.tla` |
+| boot | One life of a machine's kernel, from the VMM starting it to eviction, with one key. Its records are numbered from its report, each signed with that key. **Complete** when the log holds its records through its exit record with no gap; otherwise **unknown** (crash, host kill, lost report). Linux's `boot_id`. | `spec/cead.tla` |
 | bounded | Output admitted to the window, constructible only by truncation. The remainder **spills** to a file. | |
 | call | One command the model issues and what it gets back: a system call into the harness. Untyped argv and stdin in, text and exit code out. The unit of limits and measurement. cead adds `agent`; every other call is a well-known CLI. | |
 | call table | The system call table: the toolset. | |
@@ -51,7 +51,7 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 | harness | The Rust program in the machine: the model's kernel. Runs each process, installs kernel policy in the fork-exec gap, serves the calls, sequences records for init to sign. | |
 | host | What runs a machine or an engine: hardware, its processors, and what schedules onto them. Trusted for availability only; the model's processes cannot reach it. |  |
 | init | PID 1 in the machine, for the whole boot. Makes the boot's key and never lets it go; signs every record. Assembles the view (task image as root, overlay, core first on PATH, descriptors), applies policy, forks the harness. If the harness dies, the boot ends with no exit record: unknown. | |
-| integrity | The log says only what the machine signed, in the machine's order. Guaranteed by each boot's signature and hash chain, rooted in its report. | `spec/cead.tla` |
+| integrity | The log says only what the machine signed, in the machine's order. Guaranteed by each boot's key signing every record, in a numbered sequence rooted in its report. | `spec/cead.tla` |
 | interface | One of the three lines everything else is swappable between. | |
 | job | One query's work: a root process and its tree. Started by `cead run`. Spans one boot, or more through recovery. |  |
 | limit | A cap on one process: window size, bound, calls, wall time, depth. The rlimit analogue: set in the fork-exec gap, inherited as a copy. | |

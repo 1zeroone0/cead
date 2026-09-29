@@ -5,11 +5,9 @@ The log's acceptance, `spec/cead.tla`'s `Arrive` over real records, proved
 for every log size (TLC checks it up to its bounds).
 
 `accept` sees only records whose signature already verified: `boot` is the
-boot's public key, so the check needs no log. A report's evidence is
+boot's public key, so the check needs no log. A report's attestation is
 verified by then too (attested) or accepted as `unattested` (trusted-host
-mode). Everything that depends on the log is here. `hash` is any function:
-the proofs assume nothing of it; collision resistance is what makes
-`Linked` mean what it says.
+mode). Everything that depends on the log is here.
 -/
 namespace Cead
 
@@ -45,15 +43,6 @@ instance : Decidable (Exited log b) := by unfold Exited; infer_instance
 instance : Decidable (Recovered log b) := by unfold Recovered; infer_instance
 end
 
-variable (hash : Bytes → Blob)
-
-/-- `r`'s neighbours already in the log agree with it on the hash chain. -/
-def Links (log : Log) (r : Record) : Prop :=
-  (∀ p ∈ log, p.boot = r.boot → p.seq.toNat + 1 = r.seq.toNat → r.prev = hash p.enc) ∧
-  (∀ s ∈ log, s.boot = r.boot → r.seq.toNat + 1 = s.seq.toNat → s.prev = hash r.enc)
-
-instance : Decidable (Links hash log r) := by unfold Links; infer_instance
-
 /-- What a report's origin demands: a fork or recovery names a record the
 log holds; a recovery only while its boot has no exit record and no other
 recovery. -/
@@ -64,21 +53,21 @@ def Origin.Admits (log : Log) : Origin → Prop
 
 instance : Decidable (Origin.Admits log o) := by cases o <;> unfold Origin.Admits <;> infer_instance
 
-/-- What a record's kind demands of the log. A report opens its chain:
-first, with no predecessor. Any other record needs its boot's report, and no recovery of its
+/-- What a record's kind demands of the log. A report opens its boot's
+sequence. Any other record needs its boot's report, and no recovery of its
 boot: a recovery fences the boot it recovers. -/
 def Admits (log : Log) (r : Record) : Prop :=
   match r.body with
-  | .report o _ _ => r.seq = 1 ∧ r.prev.data = [] ∧ o.Admits log
+  | .report o _ _ => r.seq = 1 ∧ o.Admits log
   | _ => 1 < r.seq ∧ Vouched log r.boot ∧ ¬ Recovered log r.boot
 
 instance : Decidable (Admits log r) := by unfold Admits; split <;> infer_instance
 
 /-- The log keeps a record, or refuses it. It keeps the first record for each
-place in a boot's chain, so a duplicate or resend is refused and changes
+place in a boot's sequence, so a duplicate or resend is refused and changes
 nothing. -/
 def accept (log : Log) (r : Record) : Option Log :=
-  if ¬ Logged log r.boot r.seq ∧ Links hash log r ∧ Admits log r then some (log ++ [r]) else none
+  if ¬ Logged log r.boot r.seq ∧ Admits log r then some (log ++ [r]) else none
 
 /-- The snapshot a fork or recovery booted from. -/
 def Body.source : Body → Option (Blob × UInt64)
@@ -87,9 +76,9 @@ def Body.source : Body → Option (Blob × UInt64)
 
 /-- What every log `accept` builds from empty satisfies. -/
 structure Valid (log : Log) : Prop where
-  /-- A report opens each chain; every other record comes after it. -/
-  opens : ∀ r ∈ log, if r.body.isReport then r.seq = 1 ∧ r.prev.data = [] else 1 < r.seq
-  /-- One record per place in a boot's chain. -/
+  /-- A report opens each boot's sequence; every other record comes after it. -/
+  opens : ∀ r ∈ log, if r.body.isReport then r.seq = 1 else 1 < r.seq
+  /-- One record per place in a boot's sequence. -/
   firstWins : log.Pairwise fun r s => ¬ (r.boot = s.boot ∧ r.seq = s.seq)
   /-- Every record's boot has its report in the log. -/
   vouched : ∀ r ∈ log, Vouched log r.boot
@@ -101,11 +90,8 @@ structure Valid (log : Log) : Prop where
   recoveredOnce : log.Pairwise fun r s => ∀ b, r.body.recovers = some b → s.body.recovers ≠ some b
   /-- A job has one outcome: no boot both exits and is recovered. -/
   oneOutcome : ∀ b, Exited log b → ¬ Recovered log b
-  /-- Neighbours in a chain link by hash. -/
-  linked : ∀ p ∈ log, ∀ s ∈ log, p.boot = s.boot → p.seq.toNat + 1 = s.seq.toNat →
-    s.prev = hash p.enc
 
-theorem valid_nil : Valid hash [] := by
+theorem valid_nil : Valid [] := by
   constructor <;> simp [Exited]
 
 section Proofs
@@ -121,30 +107,30 @@ private theorem recovers_source {x : Record} (h : x.body.recovers = some b) :
     simp only [Body.recovers, Option.some.injEq] at h; subst h; exact ⟨l, rfl⟩
 
 /-- A recovered boot's report is in the log: the recovery names one of its records. -/
-private theorem recovered_vouched (hv : Valid hash log) (h : Recovered log b) : Logged log b 1 := by
+private theorem recovered_vouched (hv : Valid log) (h : Recovered log b) : Logged log b 1 := by
   obtain ⟨x, hx, hr⟩ := h
   obtain ⟨l, hs⟩ := recovers_source hr
   obtain ⟨y, hy, rfl, -⟩ := hv.rooted x hx b l hs
   exact hv.vouched y hy
 
 /-- `accept` keeps the record and refuses nothing it should keep: the log only grows. -/
-theorem accept_grows {log' : Log} (h : accept hash log r = some log') : log' = log ++ [r] := by
+theorem accept_grows {log' : Log} (h : accept log r = some log') : log' = log ++ [r] := by
   unfold accept at h; split at h <;> simp_all
 
-theorem accept_valid {log' : Log} (hv : Valid hash log) (h : accept hash log r = some log') :
-    Valid hash log' := by
+theorem accept_valid {log' : Log} (hv : Valid log) (h : accept log r = some log') :
+    Valid log' := by
   unfold accept at h
   split at h
   case isFalse => cases h
   rename_i hc
-  obtain ⟨hnew, ⟨hprev, hnext⟩, hadm⟩ := hc
+  obtain ⟨hnew, hadm⟩ := hc
   cases h
   -- No recovery of r's boot is in the log.
   have hfresh : ¬ Recovered log r.boot := by
     unfold Admits at hadm
     split at hadm
     · intro hr
-      exact hnew (hadm.1 ▸ recovered_vouched hash hv hr)
+      exact hnew (hadm.1 ▸ recovered_vouched hv hr)
     · exact hadm.2.2
   constructor
   · intro x hx
@@ -153,7 +139,7 @@ theorem accept_valid {log' : Log} (hv : Valid hash log) (h : accept hash log r =
     · simp only [List.mem_singleton] at hx; subst hx
       unfold Admits at hadm
       split at hadm
-      · rename_i hb; simp [Body.isReport, hb, hadm.1, hadm.2.1]
+      · rename_i hb; simp [Body.isReport, hb, hadm.1]
       · rename_i hb
         have : x.body.isReport = false := by
           unfold Body.isReport; split
@@ -185,8 +171,8 @@ theorem accept_valid {log' : Log} (hv : Valid hash log) (h : accept hash log r =
         all_goals
           obtain ⟨rfl, rfl⟩ := hs
           simp only [Origin.Admits] at hadm
-        · exact logged_append hadm.2.2
-        · exact logged_append hadm.2.2.1
+        · exact logged_append hadm.2
+        · exact logged_append hadm.2.1
       · rename_i hb
         match hx : x.body, hs with
         | .report (.fork _ _) _ _, _ | .report (.recovery _ _) _ _, _ =>
@@ -205,7 +191,7 @@ theorem accept_valid {log' : Log} (hv : Valid hash log) (h : accept hash log r =
     · rename_i o m e hb
       cases o <;> simp [Body.recovers, hb] at hyb
       subst hyb
-      exact hadm.2.2.2.2 ⟨x, hx, hxb⟩
+      exact hadm.2.2.2 ⟨x, hx, hxb⟩
     · rename_i hb
       match hy : y.body, hyb with
       | .report (.recovery _ _) _ _, _ => exact absurd hy (hb _ _ _)
@@ -221,7 +207,7 @@ theorem accept_valid {log' : Log} (hv : Valid hash log) (h : accept hash log r =
       · rename_i o m e hb
         cases o <;> simp [Body.recovers, hb] at hyr
         subst hyr
-        exact hadm.2.2.2.1 ⟨x, hxo, hxb, hxe⟩
+        exact hadm.2.2.1 ⟨x, hxo, hxb, hxe⟩
       · rename_i hb
         match hyb : y.body, hyr with
         | .report (.recovery _ _) _ _, _ => exact absurd hyb (hb _ _ _)
@@ -232,23 +218,17 @@ theorem accept_valid {log' : Log} (hv : Valid hash log) (h : accept hash log r =
       rw [hxr] at hxe; rw [hyr'] at hyr
       match hb : r.body, hxe, hyr with
       | .report (.recovery _ _) _ _, hxe, _ => simp [Body.isExit] at hxe
-  · intro p hp q hq hb hs
-    rcases List.mem_append.mp hp with hpo | hpr <;> rcases List.mem_append.mp hq with hqo | hqr
-    · exact hv.linked p hpo q hqo hb hs
-    · simp only [List.mem_singleton] at hqr; subst hqr; exact hprev p hpo hb hs
-    · simp only [List.mem_singleton] at hpr; subst hpr; exact hnext q hqo hb.symm hs
-    · simp only [List.mem_singleton] at hpr hqr; subst hpr; subst hqr; omega
 
 /-- The logs `accept` builds from empty, one record at a time. -/
 inductive Accepted : Log → Prop
   | nil : Accepted []
-  | cons {log log' r} : Accepted log → accept hash log r = some log' → Accepted log'
+  | cons {log log' r} : Accepted log → accept log r = some log' → Accepted log'
 
 /-- Every log built by `accept` from empty is valid. -/
-theorem accepted_valid (h : Accepted hash log) : Valid hash log := by
+theorem accepted_valid (h : Accepted log) : Valid log := by
   induction h with
-  | nil => exact valid_nil hash
-  | cons _ ha ih => exact accept_valid hash ih ha
+  | nil => exact valid_nil
+  | cons _ ha ih => exact accept_valid ih ha
 
 end Proofs
 end Cead
