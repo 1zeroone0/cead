@@ -6,18 +6,23 @@
   <em>cead</em> (Irish: permission; "kyad")
 </p>
 
-cead is an agent harness built as a microVM: a userspace whose user is a model.
+cead is an agent harness built as a confidential microVM: a userspace for a model, over a kernel that enforces and witnesses, whose evidence does not depend on who owns the hardware.
 The model gets a Linux machine of its own and a shell to drive it: the kernel permits each command, and eBPF witnesses it.
 
 ## What cead is
 
-A pinned Linux kernel in a microVM.
+A pinned Linux kernel in a confidential microVM.
 The model gets a system prompt and a shell, as in any agent harness.
 Every command it writes runs as a Linux process under the kernel's own controls: seccomp, Landlock and cgroups.
 An eBPF program in the kernel records what each process did, in a place the model's processes cannot reach.
 
-Most agent harnesses state their limits in prompt text and application code, then report what happened from inside the process that did it.
-cead has the kernel enforce the limits and the kernel write the record, so the report does not depend on the model or the harness telling the truth.
+Most agent harnesses state their limits in prompt text and application code, then say what happened from inside the process that did it.
+cead has the kernel enforce the limits and the kernel write the record, so the record does not depend on the model or the harness telling the truth.
+
+Nor does it depend on the host.
+The processor attests what booted, and the machine signs its record with a key the host cannot read.
+The host can stop a job, but cannot read it or forge its record.
+On hardware without attestation, the same machine runs unattested and says so.
 
 Harness design is memory-management policy.
 The context window is a cache; the model's state lives in the machine, in files, and the model reaches it through the shell.
@@ -28,7 +33,7 @@ Three interfaces; everything between two lines is swappable.
 
 | Line | Interface |
 |---|---|
-| VMM ↔ machine | boot protocol and virtio |
+| VMM ↔ machine | measured boot, content-addressed disks, attestation; devices are untrusted input |
 | kernel ↔ commands | Linux syscall ABI |
 | commands ↔ model | POSIX sh, GNU flags and error text |
 
@@ -99,7 +104,7 @@ Example run and screen recording to come with the first release.
 | kernel | Linux: cgroup v2, seccomp, Landlock, vsock; eBPF via aya |
 | shell and tools | brush, uutils, SQLite |
 | policy | Cedar |
-| VMMs | Firecracker on Linux, Virtualization.framework on macOS |
+| VMMs | Cloud Hypervisor (SEV-SNP on KVM); Firecracker and Virtualization.framework, unattested |
 | images and build | OCI images, nix |
 
 ## Deployment
@@ -134,14 +139,15 @@ Work fans out three ways, told apart by who spawns and when:
 - Authority is per tool: how far a tool can go beyond what its command line says.
   `grep` does only what its arguments say; `python` can do anything the process may.
   The class picks the tool's kernel policy and says how to read its trace.
-- The host is out of reach, and trusted.
+- The host is out of reach, and untrusted.
   The grader and long-lived API keys stay on the host; the machine holds only a token scoped to its job, and the log is held outside the machine.
-  cead trusts the host's operator and hardware.
+  The host is trusted only to keep a job running: it can stop one, but not read it or forge its log.
+  Trusted-host mode asserts the rest instead of proving it.
 
 ### Hardware
 
-Two VMMs boot the same machine and leave the same evidence: Firecracker on Linux, Virtualization.framework on macOS.
-The host needs a hypervisor and nothing else.
+Cloud Hypervisor boots attested machines on bare-metal AMD EPYC with SEV-SNP, and the same machine unattested on any KVM host.
+Firecracker and Virtualization.framework boot it unattested, so the harness runs where developers are.
 
 ### Network
 
