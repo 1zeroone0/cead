@@ -393,8 +393,9 @@ pub(crate) mod meter {
 /// A process's window. Mirrors `spec/Cead/Window.lean`: it only grows at its
 /// end, and the log replays it.
 pub(crate) mod window {
-    use crate::record::{Boot, ProcId, Record};
+    use crate::record::{Body, Boot, Decision, Event, ProcId, Record};
 
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) enum Role {
         System,
         User,
@@ -402,41 +403,215 @@ pub(crate) mod window {
     }
 
     /// One span of a window.
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) struct Span {
         role: Role,
         text: Vec<u8>,
     }
 
+    impl Span {
+        pub(crate) fn role(&self) -> &Role {
+            &self.role
+        }
+
+        pub(crate) fn text(&self) -> &[u8] {
+            &self.text
+        }
+    }
+
     /// The pinned prompt, the query, then each call's turn and what it
     /// returned. Owned by its process; dropped when the process is reaped.
+    #[derive(Debug)]
     pub(crate) struct Window {
         spans: Vec<Span>,
         len: usize,
         limit: usize,
     }
 
-    /// The next span would pass the window limit: the process ends with
+    /// The next call would pass the window limit: the process ends with
     /// `limit`.
+    #[derive(Debug)]
     pub(crate) struct Full;
 
     impl Window {
         pub(crate) fn open(prompt: Vec<u8>, query: Vec<u8>, limit: usize) -> Window {
-            todo!()
+            let len = prompt.len() + query.len();
+            let spans = vec![Span { role: Role::System, text: prompt }, Span { role: Role::User, text: query }];
+            Window { spans, len, limit }
         }
 
-        /// Appends one call: the model's turn and what the call returned.
+        /// Appends one call, its turn and what it returned, if both fit.
         pub(crate) fn push(&mut self, turn: Vec<u8>, returned: Vec<u8>) -> Result<(), Full> {
-            todo!()
+            let len = self.len + turn.len() + returned.len();
+            if len > self.limit {
+                return Err(Full);
+            }
+            self.len = len;
+            self.spans.push(Span { role: Role::Assistant, text: turn });
+            self.spans.push(Span { role: Role::User, text: returned });
+            Ok(())
         }
 
         pub(crate) fn spans(&self) -> &[Span] {
-            todo!()
+            &self.spans
         }
     }
 
-    /// Process `proc`'s window as the log's records replay it.
-    pub(crate) fn replay(records: &[Record], boot: &Boot, proc: ProcId) -> Option<Vec<Span>> {
-        todo!()
+    /// Process `proc`'s window as the log's records replay it: `replay` in
+    /// `spec/Cead/Window.lean`, definition for definition.
+    pub(crate) fn replay(records: &[Record], boot: &Boot, proc: &ProcId) -> Option<Vec<Span>> {
+        let mine = || records.iter().filter(|r| r.boot() == boot).map(Record::body);
+        let (prompt, root_query) = mine().find_map(|b| match b {
+            Body::Report { prompt, query, .. } => Some((prompt, query)),
+            _ => None,
+        })?;
+        let query = if *proc == ProcId::ROOT {
+            root_query
+        } else {
+            mine().find_map(|b| match b {
+                Body::Call { event: Event::Decision(Decision::Spawn { child, query }), .. }
+                    if child == proc =>
+                {
+                    Some(query)
+                }
+                _ => None,
+            })?
+        };
+        let mut ids: Vec<u64> = mine()
+            .filter_map(|b| match b {
+                Body::Call { id, proc: p, event: Event::Intent { .. } } if p == proc => Some(id.get()),
+                _ => None,
+            })
+            .collect();
+        ids.sort();
+        let call = |i: u64| {
+            let turn = mine().find_map(|b| match b {
+                Body::Call { id, event: Event::Intent { turn, .. }, .. } if id.get() == i => Some(turn),
+                _ => None,
+            })?;
+            let returned = mine().find_map(|b| match b {
+                Body::Call { id, event: Event::Decision(Decision::Deny { returned }), .. }
+                | Body::Call { id, event: Event::Witness { returned, .. }, .. }
+                    if id.get() == i =>
+                {
+                    Some(returned)
+                }
+                _ => None,
+            })?;
+            Some((turn.clone(), returned.clone()))
+        };
+        let mut spans = vec![
+            Span { role: Role::System, text: prompt.clone() },
+            Span { role: Role::User, text: query.clone() },
+        ];
+        for (turn, returned) in ids.into_iter().filter_map(call) {
+            spans.push(Span { role: Role::Assistant, text: turn });
+            spans.push(Span { role: Role::User, text: returned });
+        }
+        Some(spans)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Role, replay};
+        use crate::record::tests::differential;
+        use crate::record::{
+            Attestation, Body, Boot, CallId, Decision, Digest, Event, Origin, ProcId, Record, WaitStatus,
+        };
+
+        /// xorshift64: a seeded source of small random choices, no dependency.
+        struct Rng(u64);
+        impl Rng {
+            fn below(&mut self, n: u64) -> u64 {
+                self.0 ^= self.0 << 13;
+                self.0 ^= self.0 >> 7;
+                self.0 ^= self.0 << 17;
+                self.0 % n
+            }
+            fn bytes(&mut self) -> Vec<u8> {
+                let n = self.below(4);
+                (0..n).map(|_| b'a' + self.below(26) as u8).collect()
+            }
+        }
+
+        /// A random log over two boots, three processes and a few call ids:
+        /// reports, spawns, intents, denies and witnesses, in any order.
+        fn log(rng: &mut Rng, boots: &[Boot]) -> Vec<Record> {
+            (0..rng.below(24))
+                .map(|seq| {
+                    let boot = boots[rng.below(2) as usize].clone();
+                    let (id, proc) = (CallId::new(rng.below(4)), ProcId::new(rng.below(3)));
+                    let event = match rng.below(5) {
+                        0 => Event::Intent { turn: rng.bytes(), command: rng.bytes() },
+                        1 => Event::Decision(Decision::Deny { returned: rng.bytes() }),
+                        2 => Event::Decision(Decision::Spawn { child: ProcId::new(rng.below(3)), query: rng.bytes() }),
+                        3 => Event::Witness { status: WaitStatus::Exited(0), output: Digest::new([0; 32]), returned: rng.bytes() },
+                        _ => {
+                            let body = Body::Report {
+                                origin: Origin::Run,
+                                measurement: vec![],
+                                attestation: Attestation::Unattested,
+                                prompt: rng.bytes(),
+                                query: rng.bytes(),
+                            };
+                            return Record::new(boot, seq, body);
+                        }
+                    };
+                    Record::new(boot, seq, Body::Call { id, proc, event })
+                })
+                .collect()
+        }
+
+        /// A window only grows at its end, and refuses the call that would pass
+        /// its limit, leaving itself as it was.
+        #[test]
+        fn window_grows_until_full() {
+            let mut w = super::Window::open(b"pinned".to_vec(), b"query".to_vec(), 20);
+            let before = w.spans().to_vec();
+            w.push(b"ls".to_vec(), b"a b".to_vec()).expect("fits");
+            assert_eq!(&w.spans()[..before.len()], &before[..]);
+            let full = w.spans().to_vec();
+            assert!(w.push(b"cat big".to_vec(), b"x".to_vec()).is_err());
+            assert_eq!(w.spans(), &full[..]);
+        }
+
+        /// Lean's `replay` and Rust's agree on every process of random logs.
+        #[test]
+        fn replay_matches_lean() {
+            let dir = std::env::temp_dir().join(format!("cead-replay-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).expect("temp dir");
+            let boots = [Boot::new([1; 32]), Boot::new([2; 32])];
+            let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+            let mut windows = 0;
+            for n in 0..200 {
+                let records = log(&mut rng, &boots);
+                let path = dir.join(format!("{n}.hex"));
+                let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+                let lines: Vec<String> = records.iter().map(|r| hex(&r.encode())).collect();
+                std::fs::write(&path, lines.join("\n") + "\n").expect("write log");
+                for proc in 0..3 {
+                    let lean = differential(&["replay", path.to_str().expect("utf-8"), &hex(boots[0].bytes()), &proc.to_string()]);
+                    let rust = replay(&records, &boots[0], &ProcId::new(proc));
+                    let rendered = rust.map(|spans| {
+                        spans
+                            .iter()
+                            .map(|s| {
+                                let role = match s.role() { Role::System => "system", Role::User => "user", Role::Assistant => "assistant" };
+                                format!("{role} {}\n", hex(s.text()))
+                            })
+                            .collect::<String>()
+                    });
+                    match rendered {
+                        Some(r) => {
+                            windows += 1;
+                            assert_eq!(r, lean, "log {n}, process {proc}");
+                        }
+                        None => assert_eq!(lean, "", "log {n}, process {proc}: Lean replays, Rust does not"),
+                    }
+                }
+            }
+            assert!(windows > 100, "{windows} windows replayed");
+        }
     }
 }
 

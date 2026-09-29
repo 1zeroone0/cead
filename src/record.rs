@@ -22,6 +22,32 @@ pub(crate) struct CallId(u64);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ProcId(u64);
 
+impl Boot {
+    pub(crate) fn new(key: [u8; 32]) -> Boot {
+        Boot(key)
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl CallId {
+    pub(crate) fn new(n: u64) -> CallId {
+        CallId(n)
+    }
+
+    pub(crate) fn get(&self) -> u64 {
+        self.0
+    }
+}
+
+impl Digest {
+    pub(crate) fn new(d: [u8; 32]) -> Digest {
+        Digest(d)
+    }
+}
+
 impl ProcId {
     /// The root process: the one `cead run` starts.
     pub(crate) const ROOT: ProcId = ProcId(0);
@@ -130,6 +156,18 @@ pub(crate) enum Exit {
 pub(crate) struct Malformed;
 
 impl Record {
+    pub(crate) fn new(boot: Boot, seq: u64, body: Body) -> Record {
+        Record { boot, seq, body }
+    }
+
+    pub(crate) fn boot(&self) -> &Boot {
+        &self.boot
+    }
+
+    pub(crate) fn body(&self) -> &Body {
+        &self.body
+    }
+
     /// The bytes a boot's key signs: canonical, so a signature names one record.
     pub(crate) fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
@@ -406,16 +444,21 @@ pub(crate) mod tests {
     use std::process::Command;
 
     /// Runs the Lean half of the differential test (`spec/Cead/Differential.lean`),
-    /// building it first. Needs `lake` on PATH (elan's `~/.elan/bin`).
+    /// building it first, and returns what it prints. Needs `lake` on PATH
+    /// (elan's `~/.elan/bin`). A refusal (`replay` of a process with no window)
+    /// prints nothing.
     pub(crate) fn differential(args: &[&str]) -> String {
+        static BUILT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let spec = concat!(env!("CARGO_MANIFEST_DIR"), "/spec");
-        let built = Command::new("lake").args(["build", "differential"]).current_dir(spec).status();
-        assert!(built.expect("lake runs").success(), "lake build differential");
+        let built = BUILT.get_or_init(|| {
+            let status = Command::new("lake").args(["build", "differential"]).current_dir(spec).status();
+            status.expect("lake runs").success()
+        });
+        assert!(built, "lake build differential");
         let out = Command::new(format!("{spec}/.lake/build/bin/differential"))
             .args(args)
             .output()
             .expect("differential runs");
-        assert!(out.status.success());
         String::from_utf8(out.stdout).expect("differential prints text")
     }
 
