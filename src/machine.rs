@@ -133,36 +133,6 @@ pub(crate) mod harness {
         }
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::Signer;
-        use crate::record::{Body, Boot, Exit, Record, read_frame, write_frame};
-        use std::fs::File;
-        use std::os::fd::OwnedFd;
-
-        fn pipe() -> (File, File) {
-            let (r, w) = std::io::pipe().expect("pipe");
-            (File::from(OwnedFd::from(r)), File::from(OwnedFd::from(w)))
-        }
-
-        /// Records leave numbered from 2 without a gap; `acknowledged` waits
-        /// for its place whatever order acknowledgments come in.
-        #[test]
-        fn numbers_and_waits() {
-            let ((mut init_reads, harness_writes), (harness_reads, mut init_writes)) = (pipe(), pipe());
-            let boot = Boot::new([7; 32]);
-            let mut signer = Signer::new(harness_writes, harness_reads, boot.clone());
-            assert_eq!(signer.send(Body::Exit(Exit::Meter)).expect("send"), 2);
-            assert_eq!(signer.send(Body::Exit(Exit::Limit)).expect("send"), 3);
-            let first = Record::decode(&read_frame(&mut init_reads).expect("frame")).expect("record");
-            assert_eq!(first, Record::new(boot, 2, Body::Exit(Exit::Meter)));
-            for place in [3u64, 2] {
-                write_frame(&mut init_writes, &place.to_be_bytes()).expect("ack");
-            }
-            signer.acknowledged(2).expect("acked");
-            signer.acknowledged(3).expect("acked");
-        }
-    }
 
     /// Why a live process was ended by the harness rather than by its reply.
     pub(crate) enum Exhausted {
@@ -252,6 +222,37 @@ pub(crate) mod harness {
             todo!()
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::Signer;
+        use crate::record::{Body, Boot, Exit, Record, read_frame, write_frame};
+        use std::fs::File;
+        use std::os::fd::OwnedFd;
+
+        fn pipe() -> (File, File) {
+            let (r, w) = std::io::pipe().expect("pipe");
+            (File::from(OwnedFd::from(r)), File::from(OwnedFd::from(w)))
+        }
+
+        /// Records leave numbered from 2 without a gap; `acknowledged` waits
+        /// for its place whatever order acknowledgments come in.
+        #[test]
+        fn numbers_and_waits() {
+            let ((mut init_reads, harness_writes), (harness_reads, mut init_writes)) = (pipe(), pipe());
+            let boot = Boot::new([7; 32]);
+            let mut signer = Signer::new(harness_writes, harness_reads, boot.clone());
+            assert_eq!(signer.send(Body::Exit(Exit::Meter)).expect("send"), 2);
+            assert_eq!(signer.send(Body::Exit(Exit::Limit)).expect("send"), 3);
+            let first = Record::decode(&read_frame(&mut init_reads).expect("frame")).expect("record");
+            assert_eq!(first, Record::new(boot, 2, Body::Exit(Exit::Meter)));
+            for place in [3u64, 2] {
+                write_frame(&mut init_writes, &place.to_be_bytes()).expect("ack");
+            }
+            signer.acknowledged(2).expect("acked");
+            signer.acknowledged(3).expect("acked");
+        }
+    }
 }
 
 /// A model's process, as the harness holds it.
@@ -287,27 +288,6 @@ pub(crate) mod process {
         }
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::Rights;
-        use std::path::PathBuf;
-
-        fn rights(read: &[&str], write: &[&str]) -> Rights {
-            let paths = |ps: &[&str]| ps.iter().map(PathBuf::from).collect();
-            Rights { read: paths(read), write: paths(write) }
-        }
-
-        /// A child gets its parent's rights or fewer, never more.
-        #[test]
-        fn attenuates_never_amplifies() {
-            let parent = rights(&["/work"], &["/work/out"]);
-            assert!(parent.attenuate(rights(&["/work/src"], &["/work/out/a"])).is_ok());
-            assert!(parent.attenuate(rights(&[], &[])).is_ok());
-            assert!(parent.attenuate(rights(&["/etc"], &[])).is_err());
-            assert!(parent.attenuate(rights(&[], &["/work/src"])).is_err());
-            assert!(parent.attenuate(rights(&["/workshop"], &[])).is_err());
-        }
-    }
 
     /// What a blocked process waits on: property 18 of the spec, by
     /// construction. Each holds the model's turn, which enters the window
@@ -362,6 +342,28 @@ pub(crate) mod process {
         state: State,
         window: Window,
         shell: Shell,
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::Rights;
+        use std::path::PathBuf;
+
+        fn rights(read: &[&str], write: &[&str]) -> Rights {
+            let paths = |ps: &[&str]| ps.iter().map(PathBuf::from).collect();
+            Rights { read: paths(read), write: paths(write) }
+        }
+
+        /// A child gets its parent's rights or fewer, never more.
+        #[test]
+        fn attenuates_never_amplifies() {
+            let parent = rights(&["/work"], &["/work/out"]);
+            assert!(parent.attenuate(rights(&["/work/src"], &["/work/out/a"])).is_ok());
+            assert!(parent.attenuate(rights(&[], &[])).is_ok());
+            assert!(parent.attenuate(rights(&["/etc"], &[])).is_err());
+            assert!(parent.attenuate(rights(&[], &["/work/src"])).is_err());
+            assert!(parent.attenuate(rights(&["/workshop"], &[])).is_err());
+        }
     }
 }
 

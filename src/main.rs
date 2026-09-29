@@ -42,6 +42,10 @@ impl Role {
     }
 }
 
+fn main() -> ExitCode {
+    todo!()
+}
+
 #[cfg(test)]
 mod tests {
     use super::Role;
@@ -61,8 +65,4 @@ mod tests {
         assert!(parse(&["cead", "run"]).is_none());
         assert!(parse(&["cead"]).is_none());
     }
-}
-
-fn main() -> ExitCode {
-    todo!()
 }
