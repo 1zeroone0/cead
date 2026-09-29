@@ -38,18 +38,19 @@ Reasons   == {"finish", "timeout"}              \* what an exit record can say
 Origins   == {"run", "fork", "recovery"}        \* what a report says started its boot
 Signers   == Boots \cup {"path", "processor"}   \* the processor signs only reports
 MaxSeq    == 3 * CallLimit + 2                  \* the report, every call's records, the exit
-None      == "none"                             \* a report with no parent
+None      == "none"                             \* a report not booted from a snapshot
 
 \* One record of a boot. `seq` is its place in the boot's hash chain: the
 \* order the machine sent it, whatever order it arrives in. A report (seq 1,
 \* id 0) names its boot, whose key signs the rest, what started it, and for
-\* a fork or recovery the parent boot and the parent's last record. A call's
+\* a fork or recovery the snapshot it booted from: that boot and its last
+\* record. A call's
 \* intent, decision and witness carry its id and command; the exit record
 \* carries id 0 and how the machine exited.
 Record == [boot : Boots, seq : 1..MaxSeq, id : 0..CallLimit,
            type : CallTypes \cup {"report", "exit"},
            body : Commands \cup Reasons \cup Origins, key : Signers,
-           parent : Boots \cup {None}, head : 0..MaxSeq]
+           from : Boots \cup {None}, last : 0..MaxSeq]
 
 VARIABLES
     machine,    \* per boot: "off", "up", "exiting", "evicted"
@@ -67,15 +68,15 @@ vars == <<machine, process, calls, seq, pending, executed, job, snapshots, trans
 boot == <<machine, process, calls, seq, pending, executed, job>>
 
 Rec(b, s, i, t, x) == [boot |-> b, seq |-> s, id |-> i, type |-> t, body |-> x,
-                       key |-> b, parent |-> None, head |-> 0]
+                       key |-> b, from |-> None, last |-> 0]
 Report(b, o, p, h) == [boot |-> b, seq |-> 1, id |-> 0, type |-> "report", body |-> o,
-                       key |-> "processor", parent |-> p, head |-> h]
+                       key |-> "processor", from |-> p, last |-> h]
 Logged(b, s)        == \E r \in log : r.boot = b /\ r.seq = s
 LoggedType(b, i, t) == \E r \in log : r.boot = b /\ r.id = i /\ r.type = t
 \* The log holds boot b's report: b's key is vouched for.
 Vouched(b)          == Logged(b, 1)
 \* The log holds a report recovering boot b.
-Recovered(b)        == \E r \in log : r.type = "report" /\ r.body = "recovery" /\ r.parent = b
+Recovered(b)        == \E r \in log : r.type = "report" /\ r.body = "recovery" /\ r.from = b
 \* Boot b is evicted without its exit record in the log.
 Unknown(b)          == machine[b] = "evicted" /\ ~\E r \in log : r.boot = b /\ r.type = "exit"
 
@@ -114,7 +115,7 @@ BootFrom(b, s, o) ==
     /\ b # Root
     /\ machine[b] = "off"
     /\ o = "recovery" => Unknown(s.boot)
-    /\ Begin(b, Report(b, o, s.boot, s.head), s.calls,
+    /\ Begin(b, Report(b, o, s.boot, s.last), s.calls,
              IF o = "fork" THEN b ELSE job[s.boot])
 
 \* The log holds the report: init assembles the view, the harness starts the
@@ -173,10 +174,11 @@ Snapshot(b) ==
     /\ machine[b] = "up"
     /\ process[b] = "running"
     /\ \A s \in 1..seq[b] : Logged(b, s)
-    /\ snapshots' = snapshots \cup {[boot |-> b, head |-> seq[b], calls |-> calls[b]]}
+    /\ snapshots' = snapshots \cup {[boot |-> b, last |-> seq[b], calls |-> calls[b]]}
     /\ UNCHANGED <<machine, process, calls, seq, pending, executed, job, transit, log>>
 
-\* The model calls `finish`: the process is a zombie until the harness reaps it.
+\* The model replies without a command: the process is a zombie until the
+\* harness reaps it. The exit record calls this `finish`.
 Finish(b) ==
     /\ machine[b] = "up"
     /\ process[b] = "running"
@@ -225,7 +227,8 @@ HostKill(b) == Evict(b)
 (* delivered twice is duplicated, and the machine's resends add nothing.   *)
 
 \* The log keeps a report only if the processor signed it; a recovery only
-\* while its parent is not complete, and only the first for that parent.
+\* while the boot it recovers is not complete, and only the first for that
+\* boot.
 \* It keeps any other record only if its boot's key signed it, the log holds
 \* that boot's report, and no recovery has taken the boot's place. It keeps
 \* the first record for each place in a boot's hash chain; a duplicate or
@@ -235,8 +238,8 @@ Arrive(r) ==
     /\ IF r.type = "report"
          THEN /\ r.key = "processor"
               /\ r.body = "recovery" =>
-                   /\ ~LoggedType(r.parent, 0, "exit")
-                   /\ ~Recovered(r.parent)
+                   /\ ~LoggedType(r.from, 0, "exit")
+                   /\ ~Recovered(r.from)
          ELSE /\ r.key = r.boot
               /\ Vouched(r.boot)
               /\ ~Recovered(r.boot)
@@ -311,7 +314,7 @@ Unambiguous ==
     LET Seen == {r \in transit : r.key # "path"} \cup log
     IN \A r1, r2 \in Seen : (r1.boot = r2.boot /\ r1.seq = r2.seq) => r1 = r2
 
-\* 9. An exit record saying `finish` means the model called `finish`: no
+\* 9. An exit record saying `finish` means the model ended its turn: no
 \*    call was cut off.
 FinishHonest ==
     \A r \in log : (r.type = "exit" /\ r.body = "finish") => process[r.boot] = "zombie"
@@ -327,16 +330,16 @@ Complete ==
 \* 11. Nothing runs on a boot until the log holds its report.
 ReportFirst == \A b \in Boots : process[b] # "initial" => Vouched(b)
 
-\* 12. A fork or recovery names a record the log holds: its parent's last
+\* 12. A fork or recovery names a record the log holds: its snapshot's last
 \*     record when the snapshot was taken.
 Rooted ==
-    \A r \in log : (r.type = "report" /\ r.parent # None) => Logged(r.parent, r.head)
+    \A r \in log : (r.type = "report" /\ r.from # None) => Logged(r.from, r.last)
 
 \* 13. A job has one outcome: a recovered boot is never complete, and no two
 \*     boots of one job run at once.
 OneOutcome ==
     /\ \A r \in log : (r.type = "report" /\ r.body = "recovery") =>
-                        ~LoggedType(r.parent, 0, "exit")
+                        ~LoggedType(r.from, 0, "exit")
     /\ \A x, y \in Boots :
          (x # y /\ job[x] = job[y] /\ Vouched(x) /\ Vouched(y)) =>
             ~(machine[x] = "up" /\ machine[y] = "up")

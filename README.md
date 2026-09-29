@@ -44,6 +44,7 @@ System diagram to come with the first release.
 - [Recursive Language Models](https://arxiv.org/abs/2512.24601) (Zhang, Kraska, Khattab)
 - [Language model harnesses are compositional generalizers](https://alexzhang13.github.io/blog/2026/harness/) (Zhang, Khattab)
 - [OSTEP](https://pages.cs.wisc.edu/~remzi/OSTEP/) (Arpaci-Dusseau)
+- [The Datacenter as a Computer](https://link.springer.com/book/10.1007/978-3-031-01761-2) (Barroso, Hölzle, Ranganathan)
 - [Capability Myths Demolished](https://srl.cs.jhu.edu/pubs/SRL2003-02.pdf) (Miller, Yee, Shapiro)
 - [Robust Composition](http://www.erights.org/talks/thesis/) (Miller)
 - [Prime Agent](https://www.primeintellect.ai/blog/prime-agent) ([source](https://github.com/PrimeIntellect-ai/prime-agent)) and [Sandboxes](https://www.primeintellect.ai/blog/sandboxes) (Prime Intellect)
@@ -120,7 +121,7 @@ Work fans out three ways, told apart by who spawns and when:
 |---|---|---|---|
 | evals | operator | before the job | scale-out: N machines from one manifest |
 | reinforcement learning | operator or trainer | mid-job, at a chosen state | fork: K machines from one snapshot, the way a git worktree forks a checkout |
-| long or autonomous tasks | the model | whenever it decides | `rlm`: a sub-agent process inside the machine |
+| long or autonomous tasks | the model | whenever it decides | `agent`: a sub-agent process inside the machine |
 
 - Kubernetes can schedule machines as pods; Firecracker was built for this shape of workload.
 - The long-term direction is one box: model, inference engine, kernel and cead.
@@ -163,13 +164,16 @@ Rules beyond that come with the first release.
 - Each call.
   The harness assembles the context window from the system prompt, the query and the bounded output of every command so far, and sends it to the engine.
   It runs the command that comes back and adds the output, cut at a size cap, to the window; the full output goes to a file the model can read piecewise.
-- Recursion, inside the machine.
-  `rlm` starts a child process with a slice of the parent's context, a meter under its parent's, the same tools, and its own context window.
-  It is a sub-agent, built from process structure rather than at the application layer.
+- Sub-agents, called programmatically.
+  `agent` starts a child process with a slice of the parent's context on stdin, a meter under its parent's, the same tools, and its own context window.
+  It is a command, so the shell composes it: loops, pipes, `&`, `wait`, `kill`.
+  A child's answer lands in a file or a shell variable and enters a window only when read.
 - Forking, of the machine.
   A snapshot of a running machine boots another machine that diverges from the same state.
-- Finish.
-  `finish` ends a process with its answer; when the root process finishes, the job is over and the machine is gone.
+- Ending.
+  A process ends when the model replies without a command; the reply is its answer on stdout.
+  Ending kills its running sub-agents, so `wait` first to keep them.
+  When the root process ends, the job is over and the machine is gone.
 
 ### Data
 

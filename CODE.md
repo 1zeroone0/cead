@@ -23,7 +23,7 @@ Spec, skeleton, fill. TLA+, Lean and Rust are one pipeline, not alternatives: TL
 ## Boundaries
 
 - Which side of which interface is new code on: model-facing, machine tool, harness, tracer, host? What is its source of stability: written spec, ABI promise, pinned version, none? Below the ABI, what re-validates it when the pinned kernel changes?
-- The model's side is untyped and GNU-flavoured. Types live between the shell and the kernel, never in the shell. Widening the model-facing surface is GNU-flavoured POSIX or a third call in disguise.
+- The model's side is untyped and GNU-flavoured. Types live between the shell and the kernel, never in the shell. Widening the model-facing surface is GNU-flavoured POSIX or a second call in disguise.
 - The call table is the single source: builtins, exec policy, prompt lines and man text render from it, never a second list. New capability arrives as state or a well-known CLI.
 - A dependency's types stay inside the boundary module that wraps it. The skeleton names our nouns; swapping a dependency is a module change.
 
@@ -37,7 +37,7 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 | availability | The job runs and ends. The host guarantees it, and can always deny it. | `spec/cead.tla` |
 | boot | One life of a machine's kernel, from the VMM starting it to eviction, with one key. Its records form one hash chain signed with that key, its report first. **Complete** when the log holds its records through its exit record with no gap; otherwise **unknown** (crash, host kill, lost report). Linux's `boot_id`. | `spec/cead.tla` |
 | bounded | Output admitted to the window, constructible only by truncation. The remainder **spills** to a file. | |
-| call | One command the model issues and what it gets back: a system call into the harness. Untyped argv and stdin in, text and exit code out. The unit of limits and measurement. cead adds `rlm` and `finish`; every other call is a well-known CLI. | |
+| call | One command the model issues and what it gets back: a system call into the harness. Untyped argv and stdin in, text and exit code out. The unit of limits and measurement. cead adds `agent`; every other call is a well-known CLI. | |
 | call table | The system call table: the toolset. | |
 | cead | The project and the operator's binary. | crate and binary `cead` |
 | command | What the model writes: shell over the core plus the task image. | |
@@ -45,7 +45,7 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 | console | The operator's interface to manifests, machines and their state: `cead` with no verb. Its verbs drive the scheduler. |  |
 | core | The invariant tools every machine has: brush, uutils, grep, git, sqlite3. nix-built, static, first on PATH. | |
 | decision | The outcome of checking a call against policy: allow or deny. | |
-| descriptor | State the model holds this session, bound to an object with rights. Minted by cead, never discovered; a capability. A child's is **attenuated**. | |
+| descriptor | State the model holds this session, bound to an object with rights. Minted by cead, never discovered; a capability. A child process's is **attenuated** when it is spawned, and never grows; revoking it is `kill`. | |
 | engine | Executes the weights and signs what it produces: the model's counterpart to the machine. vLLM by default. |  |
 | evict | Dispose at any tier: window span, KV block, process, machine. | |
 | executed | What the kernel ran: the truth the records record. | `spec/cead.tla` |
@@ -55,25 +55,25 @@ Every noun has one home in code: a type, a module or crate, or a binary. A noun 
 | integrity | The log says only what the machine signed, in the machine's order. Guaranteed by each boot's signature and hash chain, rooted in its report. | `spec/cead.tla` |
 | interface | One of the three lines everything else is swappable between. | |
 | job | One query's work: a root process and its tree. Started by `cead run`. Spans one boot, or more through recovery. |  |
-| limit | A cap on one process: window size, bound, calls, wall time. The rlimit analogue: set in the fork-exec gap, inherited as a copy. | |
+| limit | A cap on one process: window size, bound, calls, wall time, depth. The rlimit analogue: set in the fork-exec gap, inherited as a copy. | |
 | log | Every boot's records, held outside the machine. Records in transit can be lost, delayed, replayed or forged; the log keeps only what the processor or a boot's key signed. A complete boot's records are all it did; an unknown boot's are true but may be partial. A job's boots link through their reports. One writer per boot: never consensus. | `spec/cead.tla` |
 | machine | The unit: pinned kernel, core, task image, descriptors, call table, policy and model, booted in a microVM by a VMM. | |
 | manifest | The one file that pins a machine by content. Equal manifests are the same experiment; its hashes are the version vector. | |
-| meter | What a process tree may spend, from KeyKOS. A child's meter hangs below its parent's; every spend is charged to each meter above it, so a tree never outspends its root. A parent can cap or revoke a child's meter. What it counts is manifest policy. | |
+| meter | What a process tree may spend, from KeyKOS. A child process's meter hangs below its parent's; every spend is charged to each meter above it, so a tree never outspends its root. A parent caps a child's meter in `agent`'s argv and revokes it with `kill`. What it counts is manifest policy. | |
 | model | The machine's user: weights running on an engine, reached by the harness over TLS that every host between only relays. The machine holds only a job-scoped token, never a long-lived key. |  |
 | operator | The human at depth 0. Types `cead` or `cead run`; never types a call. | |
 | pinned | The part of the window eviction never touches: the system prompt. | |
 | policy | The rows of the call table in Cedar, compiled to seccomp and Landlock, installed before exec. Permit-all is a declared policy, not an absence. | |
-| process | An OS process running one harness cycle, with its own cgroup, window, shell, limits and meter; each call runs as its child. Running, ready, blocked or zombie. Started by `run` at depth 0, `rlm` below. | |
-| processor | What a process runs on. For the machine, the CPU; for the model, the GPU, a coprocessor to the model's process. |  |
-| query | The argv of `run` or `rlm`, commit-message sized. Anything longer is context. | |
-| report | A boot's first record: the processor's signed statement binding the boot's key, and for a fork or recovery the parent boot and its last record, to the manifest's measurement. Unsigned in trusted-host mode. Linux's TSM report. | `spec/cead.tla` |
+| process | An OS process running one harness cycle, with its own cgroup, window, shell, limits and meter; each call runs as its child. Running, ready, blocked or zombie. Started by `run` at depth 0, `agent` below. It ends when the model replies without a command; its reply is its stdout. Each `agent` child is spawned in its own PID namespace, so `kill` reaches only its descendants. | |
+| processor | What a process runs on. For the machine, the CPU; for the model, the GPU, a coprocessor to the model's process. A boot sees the model's processors as virtual, like vCPUs; how the engine shares its GPU among them (batching) is its scheduler's. |  |
+| query | The argv of `run` or `agent`, commit-message sized. Anything longer is context. | |
+| report | A boot's first record: the processor's signed statement binding the boot's key, and for a fork or recovery the snapshot it booted from (that boot and its last record), to the manifest's measurement. Unsigned in trusted-host mode. Linux's TSM report. | `spec/cead.tla` |
 | record | One entry the machine signs for the log, Linux audit's unit. Types: report, intent, decision, witness, exit. A call's intent, decision and witness share its id, as Linux audit's records share an event. | `spec/cead.tla` |
 | rights | What a call may do to state: read, write. | |
 | ring | A privilege layer: model processes; harness and tracer; host. | |
-| scheduler | Decides what runs where: machines on hosts, requests on engines. Trusted for availability only; needs consensus once there is more than one. |  |
+| scheduler | Decides what runs where: machines on hosts (Kubernetes), requests on engines (Dynamo). Trusted for availability only; needs consensus once there is more than one. |  |
 | slice | The bytes a child receives on stdin, sealed. | |
-| snapshot | The whole machine at an instant, taken between calls once the log holds every record so far. A boot from one is a **fork** (a new job; unlimited) or a **recovery** (the same job, after its boot is unknown; at most one per unknown boot; the operator's choice, manual by default). A recovery **fences** its parent: the log keeps no record of the parent's after it. | |
+| snapshot | The whole machine at an instant, taken between calls once the log holds every record so far. A boot from one is a **fork** (a new job; unlimited) or a **recovery** (the same job, after its boot is unknown; at most one per unknown boot; the operator's choice, manual by default). A recovery **fences** the boot it recovers: the log keeps none of that boot's records after it. | |
 | task image | The tools one task brings: a read-only OCI image with a label declaring its tools, attached at boot. | |
 | tracer | eBPF in the machine's kernel, keyed by cgroup, outside the model's reach. Produces the witness. | |
 | VMM | What boots a machine: Cloud Hypervisor, attested on SEV-SNP or unattested on KVM; Firecracker and Virtualization.framework, unattested. Same machine, same records; only an attested boot's report is signed. | |
