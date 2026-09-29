@@ -4,6 +4,7 @@ Public artifacts — commits, code, docs, descriptions — carry "Roone" only, n
 
 # CONTEXT
 Read these root-level files: `README.md` (what this is), `CODE.md` (method, vocabulary, languages).
+Skills live in `.agents/skills/` (Codex); `.claude/skills` links there (Claude Code), as `CLAUDE.md` links to this file.
 Every time you create or discover a new AGENTS.md, paste its path here:
 
 # COMMUNICATION
