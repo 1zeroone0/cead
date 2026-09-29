@@ -6,90 +6,77 @@
   <em>cead</em> (Irish: permission; "kyad")
 </p>
 
-cead is an agent harness built as a microVM: a userspace whose user is a model.
-The model gets a Linux machine of its own and a shell to drive it: the kernel permits each command, and eBPF witnesses it.
+cead is an agent harness built as a confidential microVM.
+A userspace for a model, over a kernel that enforces and witnesses,
+whose evidence does not depend on who owns the hardware.
 
 ## What cead is
 
-A pinned Linux kernel in a microVM.
-The model gets a system prompt and a shell, as in any agent harness.
-Every command it writes runs as a Linux process under the kernel's own controls: seccomp, Landlock and cgroups.
-An eBPF program in the kernel records what each process did, in a place the model's processes cannot reach.
+- **A machine for the model.**
+  A pinned Linux kernel in a microVM; the model drives it through a shell.
+- **The kernel enforces.**
+  Each command runs as a Linux process under seccomp, Landlock and cgroups.
+- **The kernel records.**
+  eBPF writes what each process did, out of the model's reach.
+  Most harnesses report from the process that acted; here the model's processes never touch the record.
+- **The host cannot forge it.**
+  On attested hardware, the processor attests what booted.
+  The machine signs its records with a key the host cannot read.
+  The host can stop a job or drop its records; it cannot read the job or forge them.
+  Without attestation hardware, the same machine runs unattested and says so.
+- **Harness design is memory-management policy.**
+  The context window is a cache; state lives in files, reached through the shell.
+  Forty commands in a script that prints `ok`: one line of window, forty enforced and witnessed.
 
-Most agent harnesses state their limits in prompt text and application code, then report what happened from inside the process that did it.
-cead has the kernel enforce the limits and the kernel write the record, so the report does not depend on the model or the harness telling the truth.
+Three interfaces; everything between two lines is swappable.
 
-Harness design is memory-management policy.
-The context window is a cache; the model's state lives in the machine, in files, and the model reaches it through the shell.
-A script that stands up a service, runs forty commands and prints `ok` has advanced the task by forty commands and cost the context window one line.
-All forty ran under kernel policy and were recorded, whether or not the model mentioned them.
-
-Three contracts; everything between two lines is swappable.
-
-| Line | Contract |
+| Line | Interface |
 |---|---|
-| backend ↔ guest | boot protocol and virtio |
+| VMM ↔ machine | measured boot, content-addressed disks, attestation |
 | kernel ↔ commands | Linux syscall ABI |
 | commands ↔ model | POSIX sh, GNU flags and error text |
-
-System diagram to come with the first release.
 
 ### Reading
 
 - [Recursive Language Models](https://arxiv.org/abs/2512.24601) (Zhang, Kraska, Khattab)
 - [Language model harnesses are compositional generalizers](https://alexzhang13.github.io/blog/2026/harness/) (Zhang, Khattab)
 - [OSTEP](https://pages.cs.wisc.edu/~remzi/OSTEP/) (Arpaci-Dusseau)
+- [The Datacenter as a Computer](https://web.eecs.umich.edu/~mosharaf/Readings/DC-Computer.pdf) (Barroso, Clidaras, Hölzle)
 - [Capability Myths Demolished](https://srl.cs.jhu.edu/pubs/SRL2003-02.pdf) (Miller, Yee, Shapiro)
 - [Robust Composition](http://www.erights.org/talks/thesis/) (Miller)
 - [Prime Agent](https://www.primeintellect.ai/blog/prime-agent) ([source](https://github.com/PrimeIntellect-ai/prime-agent)) and [Sandboxes](https://www.primeintellect.ai/blog/sandboxes) (Prime Intellect)
 
+
 ## What cead is not
 
-- Not a container runtime.
-  cead uses container images and container schedulers, and replaces the container itself with a microVM.
-- Not a conversation.
-  Nothing carries between runs except state in the machine.
-  A run's context window is the system prompt, the query, and what the model has read since.
-- Not a policy.
-  You bring your own, written in Cedar, and cead compiles it into kernel rules; cead does not decide what a model should be allowed to do.
-- Not a new interface for the model.
-  The model gets a POSIX shell with GNU tools, because that is the interface with the most training data behind it and the one the kernel already enforces.
-  A bespoke tool schema is out of distribution, has to be taught in every prompt, and needs a translation layer between what the model said and what was enforced.
+- **Not a container runtime.**
+  It uses container images and schedulers; a microVM replaces the container.
+- **Not a conversation.**
+  Nothing carries between jobs except state in the machine.
+- **Not a policy.**
+  You bring your own, in Cedar; cead compiles it into kernel rules.
+- **Not a new interface.**
+  POSIX sh and GNU tools: the most training data, and what the kernel already enforces.
+  A bespoke tool schema must be taught in every prompt and translated before it can be enforced.
 
 ## How to use cead
 
-Install instructions come with the first release.
+A **manifest** is one file that names a machine: kernel, task image, policy, VMM, model (weights, engine).
 
-A declaration is one file that names a machine: kernel, task image, policy, backend, and model endpoint.
-Two ways to run it:
+- `cead` opens the console over a manifest and its state; `run` starts a job.
+- `cead run "query" < context > answer` does one job and returns; the exit code is the outcome.
+- A query is commit-message sized; anything longer is a file for the model to read.
 
-- `cead` boots the machine the declaration describes and opens a shell over it.
-  Each command in that shell is one operator verb; `run` starts the model.
-- `cead run` does one run from your own shell and returns.
-  argv is the query, stdin is the context, stdout is the answer, and the exit code is the outcome.
+What a job does, from manifest to first command:
 
-A query is the length of a commit message; anything longer is a file in the machine for the model to read.
-
-What a run does, from declaration to first command:
-
-1. The backend boots one kernel and attaches two read-only disks: the core (cead's tools, policy and eBPF programs, built by nix) and the task image.
-2. init runs as root, before any model process exists.
-   It loads the eBPF programs into the kernel and compiles the policy into a seccomp filter and a Landlock ruleset.
-3. init mounts one filesystem: the task image as root, the core first on PATH, and each descriptor (context on stdin, checkout, scratch, database file).
-4. The harness forks the root process, attaches the policy, drops to an unprivileged uid, and execs the shell.
-   Every child inherits the policy; no process can remove it.
-5. The harness renders the system prompt from what it mounted, so it cannot claim what is not there, and sends it with the query to the model endpoint.
-6. The model writes its first command.
-
-Three kinds of file, three fates:
-
-| File | Consumed by | Becomes | The model's relation to it |
-|---|---|---|---|
-| eBPF program | init, via `bpf()` | a kernel object | needs CAP_BPF to touch; has none |
-| policy | init, via seccomp and Landlock | attributes of every process | no syscall loosens them |
-| context, checkout, database | mount and descriptor | files in the view, with rights | reads and writes within them |
-
-Example run and screen recording to come with the first release.
+1. The VMM boots the kernel with two read-only disks: the core (built by nix) and the task image.
+2. The machine makes its key and sends its report; nothing runs until the log holds it.
+3. init, as root, loads the eBPF programs and compiles the policy into seccomp and Landlock.
+4. init mounts the view: the task image as root, the core first on PATH, one descriptor per grant.
+5. The harness spawns the root process: policy attached, an unprivileged uid, the shell.
+   Every child inherits the policy; no syscall loosens it, and no model process holds CAP_BPF.
+6. The harness sends the engine the query and a system prompt rendered from what it mounted.
+7. The model writes its first command.
 
 ## Dependencies
 
@@ -99,86 +86,77 @@ Example run and screen recording to come with the first release.
 | kernel | Linux: cgroup v2, seccomp, Landlock, vsock; eBPF via aya |
 | shell and tools | brush, uutils, SQLite |
 | policy | Cedar |
-| backends | Firecracker on Linux, Virtualization.framework on macOS |
+| VMMs | Cloud Hypervisor (SEV-SNP on KVM); Firecracker and Virtualization.framework, unattested |
+| attestation | AMD SEV-SNP, Linux TSM reports (configfs-tsm), virtee/sev |
 | images and build | OCI images, nix |
 
 ## Deployment
 
-The machine runs wherever the cead CLI runs: a laptop or a cloud VM with a hypervisor.
-The model runs wherever the declaration's endpoint is: a hosted API or a local server.
-The CLI drives everything below: it reads the declaration, boots, runs, snapshots, forks, and reads the log.
+The machine is the unit of scale. Work fans out three ways:
 
-The machine is the unit of scale.
-Work fans out three ways, told apart by who spawns and when:
-
-| Use | Who spawns | When | Mechanism |
+| Mechanism | Who spawns | When | What |
 |---|---|---|---|
-| evals | operator | before the run | scale-out: N machines from one declaration |
-| reinforcement learning | operator or trainer | mid-run, at a chosen state | fork: K machines from one snapshot, the way a git worktree forks a checkout |
-| long or autonomous tasks | the model | whenever it decides | `rlm`: a sub-agent process inside the machine |
-
-- Kubernetes can schedule machines as pods; Firecracker was built for this shape of workload.
-- The long-term direction is one box: model, inference engine, kernel and cead.
+| scale-out | operator | before a job | N machines from one manifest |
+| fork | operator | mid-job | K machines from one snapshot |
+| `agent` | the model | whenever it decides | a sub-agent process in the machine |
 
 ### Identity
 
-- The machine is the boundary.
-  Everything a run can touch is inside one disposable microVM, so the questions that usually need users, roles and sessions collapse to one: which machine.
-- A declaration answers it by hash.
-  Two machines with the same declaration are the same experiment.
-- Operator and model are told apart by where they stand.
-  The operator runs the CLI on the host; the model runs inside the machine as an unprivileged user.
-- Access is granted; content is discovered.
-  Every file, socket or database the model can reach was granted to it by cead, and a child process gets no more than its parent held.
-  What is in them, the model finds for itself.
-- Authority is per tool: how far a tool can go beyond what its command line says.
-  `grep` does only what its arguments say; `python` can do anything the process may.
-  The class picks the tool's kernel policy and says how to read its trace.
-- The host is out of reach.
-  API keys, the grader and the log stay on the host.
+- **The machine is the boundary.**
+  Users, roles and sessions collapse to one question: which machine.
+- **A manifest answers it by hash.**
+  Machines from one manifest start identical.
+- **Where you stand says who you are.**
+  The operator runs the CLI on the host; the model is an unprivileged user in the machine.
+- **Access is granted; content is discovered.**
+  cead grants every file, socket and database; a child gets no more than its parent.
+- **Authority is per tool.**
+  `grep` does what its arguments say; `python` can do anything its process may.
+  The tool's class sets its policy and how to read its trace.
+- **Long-lived keys stay on the host.**
+  The machine holds its boot's signing key and a job-scoped token for the model.
 
-### Hardware
+### Hosts
 
-Two backends boot the same guest and leave the same evidence: Firecracker on Linux, Virtualization.framework on macOS.
-The host needs a hypervisor and nothing else.
+- Cloud Hypervisor: attested on bare-metal AMD EPYC with SEV-SNP; unattested on any KVM host.
+- Firecracker and Virtualization.framework: unattested.
+- The model runs wherever the manifest's engine is: a hosted API or our own.
+- A scheduler places machines on hosts; it never sees inside one.
 
 ### Network
 
-The model's processes have no network.
-The machine reaches the host over vsock only, through a proxy, for inference and for the log.
-Rules beyond that come with the first release.
+- The model's processes have no network.
+- The machine reaches the host only over vsock.
+- The host relays inference and the machine's records to the log.
+- Inference is encrypted end to end to our own engine; a hosted API goes through a gateway on the host.
 
 ### Workloads
 
-- Build time.
-  A task's tools are packed into a read-only OCI image; a SWE-bench instance image works as is.
-- Each step.
-  The harness assembles the context window from the system prompt, the query and the bounded output of every command so far, and sends it to the model endpoint.
-  It runs the command that comes back and adds the output, cut at a size cap, to the next step; the full output goes to a file the model can read piecewise.
-- Recursion, inside the machine.
-  `rlm` starts a child process with a slice of the parent's context, part of its budget, the same tools, and its own context window.
-  It is a sub-agent, built from process structure rather than at the application layer.
-- Forking, of the machine.
-  A snapshot of a running machine boots another machine that diverges from the same state.
-- Finish.
-  `finish` ends a process with its answer; when the root process finishes, the run is over and the machine is gone.
+- **Build.**
+  A task's tools are a read-only OCI image.
+- **Each call.**
+  The harness sends the engine the window: system prompt, query, each output so far, cut at a cap.
+  It runs the command that comes back; output past the cap spills to a file.
+- **Sub-agents.**
+  `agent` spawns a child process: a slice on stdin, a meter under its parent's, its own window.
+  The shell composes it (`&`, `wait`, `kill`); its answer stays in a file or variable until read.
+- **Fork.**
+  A snapshot boots another machine with a new key.
+  A fork starts a new job; a recovery continues one whose boot was lost, at most once.
+- **Ending.**
+  A process ends when the model replies without a command; the reply is its stdout.
+  Ending kills running sub-agents; `wait` first to keep them.
+  When the root process ends, the job ends and the machine is gone.
 
 ### Data
 
-- State is files in the machine, reached through the shell.
-- The database is a file.
-  SQLite is a core tool, so a relational database is a file in the filesystem and a snapshot captures it.
-- Postgres is a task tool for tasks that need extensions, concurrency or an existing data directory.
-  It runs inside the machine, so a snapshot still captures it.
-- State leaves the machine on purpose.
-  A run's answer is stdout; a checkout can be pushed; a snapshot can be exported.
-  Nothing else leaves.
+- State is files in the machine, databases included, reached through the shell; a snapshot captures all of it.
+- State leaves only on purpose: the answer on stdout, an exported snapshot or checkout.
 
 ### Observability
 
-- eBPF records what the model's processes do: which programs they start, which files they read, and each call to the model endpoint.
-- Every action has a cause.
-  The observer is keyed by cgroup, so each action is attributed to the command that caused it, however many processes that command spawned.
-- The log is one entry per command, written on the host.
-  The operator reads it from the CLI, live during a run and after.
-- Cost per command is a first-release measurement.
+- eBPF records which programs start, which files are read, and each request to the engine.
+- Keyed by cgroup: each action is traced to the command that caused it, however many processes it spawned.
+- The log holds each boot's records, in order:
+  its report; per call an intent, a decision, and a witness if allowed; its exit.
+- The console reads it live, during a job and after.
