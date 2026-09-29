@@ -26,6 +26,7 @@ When you hit a wall — a case that doesn't fit, a spec that breaks, an assumpti
 NEVER patch around a wall to comply with my words — no flags, special cases, shims, parallel paths, or tests rewritten to dodge a broken rule.
 Building around a blocker is failure and will always be rejected, sunk cost irrelevant.
 A blocker honestly reported is a desired outcome; a "working" deliverable built on duct tape is sabotage.
+Evidence outranks every artifact: when code or a measurement disagrees with a spec, doc or decision, change it in that PR; never defend it.
 
 # GITHUB
 Pull Requests (PRs) are the units of work; only ever create PRs. No issues: the PR is the only record.
@@ -44,7 +45,7 @@ Squash trades bisect granularity for readable history: the unsquashed commits st
 A leaning lives in the description of the PR that will settle it. Once code settles it, the why is a doc comment. No third document.
 Only #7 (Horizon) and PRs in progress are open. Until its PR exists, a leaning is a comment on #7, in the description template; scope it there, and when it is ready, open its PR and delete the comment.
 
-The first commit is the spec, when `CODE.md` says the seed's shape demands one; its checker is green before any code exists.
+When a PR changes what the spec says, its first commit is that change, TLC green, before any code.
 The next commit is typed stubs ONLY: types and signatures, placeholder bodies, the language's type gate green. The diff defines that PR's scope; one signature per action of the spec. `CODE.md` names each language's stub and gate.
 Subsequent commits fill those stubs.
 **Zero placeholders may remain at merge. This is always a hard requirement.** `CODE.md` names what counts as a placeholder and the lints that count them.
