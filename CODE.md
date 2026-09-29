@@ -53,7 +53,7 @@ Every noun has one home in code: a type, a module, or a subcommand. A noun may p
 | engine | Executes the weights and signs what it produces: the model's counterpart to the machine. Reached from the machine over vsock, through the gateway. | `machine::engine::Engine` |
 | evict | Dispose at any tier: window span, KV block, process, machine. | `host::vmm::Machine::evict` |
 | executed | What the kernel ran: the truth the records record. | `spec/cead.tla` |
-| gateway | The host's relay to a hosted engine: holds the credentials the machine never sees, signs each request, and records it, a second account of every window. | `host::gateway::Gateway`, `Credentials` |
+| gateway | The host's relay to a hosted engine: holds the credential the machine never sees (a Bedrock API key), sends each window through `curl`, and records it with its turn and tokens, a second account of every window. | `host::gateway::Gateway`, `Credentials`, `Answer`, `Failed` |
 | harness | The model's kernel, exec'd by init so it starts without the key. Runs each process, installs kernel policy in the fork-exec gap, serves the calls, numbers records for init to sign. One method per spec action. | `machine::harness::Harness`; `cead harness` |
 | host | What runs a machine or an engine: hardware, its processors, and what schedules onto them. Trusted for availability only; the model's processes cannot reach it. | `host` |
 | init | PID 1 in the machine, for the whole boot. Makes the boot's key and never lets it go; signs every record. Assembles the view (task image as root, overlay, core first on PATH, descriptors), applies policy, forks and execs the harness. If the harness dies, the boot ends with no exit record: unknown. | `machine::init::Init`; `cead init` |
@@ -74,7 +74,7 @@ Every noun has one home in code: a type, a module, or a subcommand. A noun may p
 | processor | What a process runs on. For the machine, the CPU; for the model, the GPU, a coprocessor to the model's process. A boot sees the model's processors as virtual, like vCPUs; how the engine shares its GPU among them (batching) is its scheduler's. | |
 | query | The argv of `run` or `agent`, commit-message sized; it opens its process's window. Anything longer is context, a file. | bytes in `record::Body::Report`, `Decision::Spawn` |
 | report | A boot's first record: binds the boot's key to the manifest's measurement, names what started it (run, or the snapshot a fork or recovery booted from), and carries the pinned prompt and the root's query. Signed by the processor on an attested boot. Linux's TSM report. | `record::Body::Report`, `Origin`; `spec/cead.tla` |
-| record | One entry the machine signs for the log, Linux audit's unit, canonically encoded. Types: report, intent (the model's turn and its command), decision, witness (how the command ended, its output's digest, what the call returned), exit (why the boot ended; the root's reply digest on a finish). A call's three share its id and process. | `record::Record`, `Body`, `Event`, `Exit`, `Signed`, `Signature`, `Digest`, `Malformed`, `Reader`; `spec/Cead/Record.lean` |
+| record | One entry the machine signs for the log, Linux audit's unit, canonically encoded. Types: report, intent (the model's turn and its command), decision, witness (how the command ended, its output's digest, what the call returned), exit (why the boot ended; the root's reply digest on a finish). A call's three share its id and process. | `record::Record`, `Body`, `Event`, `Exit`, `Signed`, `Signature`, `Digest`, `Malformed`, `Reader`, `write_frame`, `read_frame`; `spec/Cead/Record.lean` |
 | rights | What a call may do to state: read, write. | `machine::process::Rights` |
 | ring | A privilege layer: model processes; harness and tracer; host. | |
 | scheduler | Decides what runs where: machines on hosts (Kubernetes), requests on engines (Dynamo). Trusted for availability only; needs consensus once there is more than one. | |
@@ -82,7 +82,7 @@ Every noun has one home in code: a type, a module, or a subcommand. A noun may p
 | signer | The harness's end of init's signing pipe: numbers each record, so a boot's sequence has no gaps. | `machine::harness::Signer` |
 | slice | The bytes a child receives on stdin, sealed. | |
 | snapshot | The whole machine at an instant, taken between calls once the log holds every record so far. A boot from one is a **fork** (a new job; unlimited) or a **recovery** (the same job, after its boot is unknown; at most one per unknown boot; the operator's choice, manual by default). A recovery **fences** the boot it recovers: the log keeps none of that boot's records after it. | `record::Origin` |
-| span | One piece of a window: system, user or assistant text. | `machine::window::Span`, `Role` |
+| span | One piece of a window: system, user or assistant text. | `machine::window::Span`, `Role`, `encode`, `decode`, `NotSpans` |
 | task image | The tools one task brings: a read-only OCI image with a label declaring its tools, attached at boot. | |
 | tracer | eBPF in the machine's kernel, keyed by cgroup, outside the model's reach. Produces the witness. | |
 | turn | What the model writes on one call: a command, or a reply without one. Logged whole. | `machine::engine::Turn` |

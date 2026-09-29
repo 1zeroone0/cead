@@ -199,10 +199,10 @@ pub(crate) mod log {
             if let Body::Exit(_) = v.record.body() {
                 entry.exited = true;
             }
-            if let Body::Report { origin: Origin::Recovery { boot: from, .. }, .. } = v.record.body() {
-                if let Some(recovered) = self.boots.get_mut(from) {
-                    recovered.recovered = true;
-                }
+            if let Body::Report { origin: Origin::Recovery { boot: from, .. }, .. } = v.record.body()
+                && let Some(recovered) = self.boots.get_mut(from)
+            {
+                recovered.recovered = true;
             }
             Ok(())
         }
@@ -312,31 +312,200 @@ pub(crate) mod vmm {
     }
 }
 
-/// The gateway: holds the model's credentials, which never enter the machine,
-/// and relays each inference to Bedrock.
+/// The gateway: holds the model's credential, which never enters the machine,
+/// and relays each inference to Bedrock's Converse API.
 pub(crate) mod gateway {
+    use crate::machine::window::{self, Role, Span};
+    use serde_json::{Value, json};
     use std::fs::File;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
 
-    /// Owns the AWS credentials and the record of every request it relays: a
-    /// second account of each window, independent of the log.
+    /// A Bedrock API key: a bearer token, read on the host. Never serialized,
+    /// never sent anywhere but Bedrock, never on a command line.
+    pub(crate) struct Credentials(String);
+
+    impl Credentials {
+        pub(crate) fn new(token: String) -> Credentials {
+            Credentials(token)
+        }
+    }
+
+    /// Owns the credential and the record of every request it relays: a second
+    /// account of each window, independent of the log.
     pub(crate) struct Gateway {
         credentials: Credentials,
+        region: String,
+        model: String,
         requests: File,
     }
 
-    /// AWS credentials, read on the host. Never serialized, never sent.
-    pub(crate) struct Credentials {
-        access_key: String,
-        secret_key: String,
-        session_token: Option<String>,
-        region: String,
+    /// What Bedrock answered, or why there is no answer.
+    #[derive(Debug)]
+    pub(crate) enum Failed {
+        /// The machine sent something that is not a window of text.
+        BadWindow,
+        /// `curl` could not run, or Bedrock refused; its words.
+        Relay(String),
+        /// Bedrock answered with no text.
+        NoTurn,
+    }
+
+    /// One answer: the model's turn and the tokens it cost.
+    #[derive(Debug, PartialEq)]
+    pub(crate) struct Answer {
+        turn: Vec<u8>,
+        input_tokens: u64,
+        output_tokens: u64,
     }
 
     impl Gateway {
-        /// Signs a request from the machine with SigV4, sends it, records it,
-        /// and returns the response.
-        pub(crate) fn relay(&mut self, request: &[u8]) -> std::io::Result<Vec<u8>> {
-            todo!()
+        pub(crate) fn new(credentials: Credentials, region: String, model: String, requests: File) -> Gateway {
+            Gateway { credentials, region, model, requests }
+        }
+
+        /// Takes a window as the machine encodes it, asks Bedrock, records the
+        /// exchange (window, turn, tokens, in that order), and returns the turn.
+        pub(crate) fn relay(&mut self, request: &[u8]) -> Result<Vec<u8>, Failed> {
+            let spans = window::decode(request).map_err(|_| Failed::BadWindow)?;
+            let body = body(&spans).ok_or(Failed::BadWindow)?;
+            let answer = answer(&self.send(&body)?)?;
+            let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+            let line = format!(
+                "{} {} {} {}\n",
+                hex(request),
+                hex(&answer.turn),
+                answer.input_tokens,
+                answer.output_tokens
+            );
+            self.requests.write_all(line.as_bytes()).map_err(|e| Failed::Relay(e.to_string()))?;
+            Ok(answer.turn)
+        }
+
+        /// POSTs the body with `curl`. Its configuration, the token included,
+        /// goes on stdin, so neither shows in the host's process list.
+        fn send(&self, body: &Value) -> Result<Vec<u8>, Failed> {
+            let url = format!(
+                "https://bedrock-runtime.{}.amazonaws.com/model/{}/converse",
+                self.region, self.model
+            );
+            let config = curl_config(&url, &self.credentials.0, &body.to_string());
+            let mut curl = Command::new("curl")
+                .args(["--config", "-"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| Failed::Relay(e.to_string()))?;
+            curl.stdin
+                .take()
+                .ok_or_else(|| Failed::Relay("no stdin".into()))?
+                .write_all(config.as_bytes())
+                .map_err(|e| Failed::Relay(e.to_string()))?;
+            let out = curl.wait_with_output().map_err(|e| Failed::Relay(e.to_string()))?;
+            if !out.status.success() {
+                let words = [out.stderr, out.stdout].concat();
+                return Err(Failed::Relay(String::from_utf8_lossy(&words).into_owned()));
+            }
+            Ok(out.stdout)
+        }
+    }
+
+    /// A curl configuration, one option per line, values quoted with `"` and
+    /// `\` escaped.
+    fn curl_config(url: &str, token: &str, body: &str) -> String {
+        let q = |v: &str| format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""));
+        [
+            format!("url = {}", q(url)),
+            "request = \"POST\"".into(),
+            "silent".into(),
+            "show-error".into(),
+            "fail-with-body".into(),
+            format!("header = {}", q(&format!("Authorization: Bearer {token}"))),
+            format!("header = {}", q("Content-Type: application/json")),
+            format!("data-raw = {}", q(body)),
+        ]
+        .join("\n")
+            + "\n"
+    }
+
+    /// The Converse request for a window: its system span as the system
+    /// prompt, the rest as alternating messages. None if any span is not text.
+    fn body(spans: &[Span]) -> Option<Value> {
+        let text = |s: &Span| std::str::from_utf8(s.text()).ok().map(str::to_owned);
+        let mut system = Vec::new();
+        let mut messages = Vec::new();
+        for span in spans {
+            let t = text(span)?;
+            match span.role() {
+                Role::System => system.push(json!({ "text": t })),
+                Role::User => messages.push(json!({ "role": "user", "content": [{ "text": t }] })),
+                Role::Assistant => messages.push(json!({ "role": "assistant", "content": [{ "text": t }] })),
+            }
+        }
+        Some(json!({ "system": system, "messages": messages }))
+    }
+
+    /// The model's turn and its token counts from a Converse response.
+    fn answer(response: &[u8]) -> Result<Answer, Failed> {
+        let v: Value = serde_json::from_slice(response).map_err(|e| Failed::Relay(e.to_string()))?;
+        let turn: String = v["output"]["message"]["content"]
+            .as_array()
+            .ok_or(Failed::NoTurn)?
+            .iter()
+            .filter_map(|c| c["text"].as_str())
+            .collect();
+        if turn.is_empty() {
+            return Err(Failed::NoTurn);
+        }
+        let tokens = |k: &str| v["usage"][k].as_u64().unwrap_or(0);
+        Ok(Answer { turn: turn.into_bytes(), input_tokens: tokens("inputTokens"), output_tokens: tokens("outputTokens") })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Answer, answer, body, curl_config};
+        use crate::machine::window::Window;
+        use serde_json::json;
+
+        /// A window becomes Converse's system prompt and alternating messages.
+        #[test]
+        fn request_shape() {
+            let mut w = Window::open(b"pinned".to_vec(), b"query".to_vec(), 100);
+            w.push(b"ls".to_vec(), b"a\nexit 0".to_vec()).expect("fits");
+            let spans = crate::machine::window::decode(&crate::machine::window::encode(w.spans())).expect("spans");
+            assert_eq!(
+                body(&spans).expect("text"),
+                json!({
+                    "system": [{ "text": "pinned" }],
+                    "messages": [
+                        { "role": "user", "content": [{ "text": "query" }] },
+                        { "role": "assistant", "content": [{ "text": "ls" }] },
+                        { "role": "user", "content": [{ "text": "a\nexit 0" }] },
+                    ]
+                })
+            );
+        }
+
+        /// The turn is the response's text, joined; its tokens are counted.
+        #[test]
+        fn response_shape() {
+            let response = json!({
+                "output": { "message": { "role": "assistant", "content": [{ "text": "cat " }, { "text": "f" }] } },
+                "usage": { "inputTokens": 12, "outputTokens": 3 },
+                "stopReason": "end_turn"
+            });
+            let got = answer(response.to_string().as_bytes()).expect("answer");
+            assert_eq!(got, Answer { turn: b"cat f".to_vec(), input_tokens: 12, output_tokens: 3 });
+            assert!(answer(br#"{"output":{"message":{"content":[]}}}"#).is_err());
+        }
+
+        /// Quotes and backslashes in the body cannot end a config value early.
+        #[test]
+        fn config_quotes() {
+            let c = curl_config("https://x", "t", r#"{"a":"b\"c"}"#);
+            assert!(c.contains(r#"data-raw = "{\"a\":\"b\\\"c\"}""#), "{c}");
+            assert!(c.contains(r#"header = "Authorization: Bearer t""#));
         }
     }
 }

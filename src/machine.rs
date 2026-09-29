@@ -467,6 +467,42 @@ pub(crate) mod window {
         }
     }
 
+    /// Spans as they cross to the gateway: a u64 count, then each span's role
+    /// tag (0 system, 1 user, 2 assistant) and its text as u64 length and bytes.
+    pub(crate) fn encode(spans: &[Span]) -> Vec<u8> {
+        let mut out = (spans.len() as u64).to_be_bytes().to_vec();
+        for span in spans {
+            out.push(match span.role {
+                Role::System => 0,
+                Role::User => 1,
+                Role::Assistant => 2,
+            });
+            out.extend_from_slice(&(span.text.len() as u64).to_be_bytes());
+            out.extend_from_slice(&span.text);
+        }
+        out
+    }
+
+    /// Bytes that are no spans' encoding.
+    #[derive(Debug)]
+    pub(crate) struct NotSpans;
+
+    pub(crate) fn decode(bytes: &[u8]) -> Result<Vec<Span>, NotSpans> {
+        let mut r = crate::record::Reader::new(bytes);
+        let count = r.u64().map_err(|_| NotSpans)?;
+        let mut spans = Vec::new();
+        for _ in 0..count {
+            let role = match r.tag().map_err(|_| NotSpans)? {
+                0 => Role::System,
+                1 => Role::User,
+                2 => Role::Assistant,
+                _ => return Err(NotSpans),
+            };
+            spans.push(Span { role, text: r.bytes().map_err(|_| NotSpans)? });
+        }
+        if r.is_empty() { Ok(spans) } else { Err(NotSpans) }
+    }
+
     /// Process `proc`'s window as the log's records replay it: `replay` in
     /// `spec/Cead/Window.lean`, definition for definition.
     pub(crate) fn replay(records: &[Record], boot: &Boot, proc: &ProcId) -> Option<Vec<Span>> {

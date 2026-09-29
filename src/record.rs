@@ -238,14 +238,48 @@ impl Record {
     }
 }
 
+/// The most a frame may carry. The host is untrusted: a length it sends
+/// cannot make the machine allocate without bound.
+pub(crate) const MAX_FRAME: u64 = 64 << 20;
+
+/// Writes one frame: a u64 length, big-endian, then the bytes. How records,
+/// acknowledgments and inference cross a pipe or vsock.
+pub(crate) fn write_frame(w: &mut impl std::io::Write, bytes: &[u8]) -> std::io::Result<()> {
+    w.write_all(&(bytes.len() as u64).to_be_bytes())?;
+    w.write_all(bytes)?;
+    w.flush()
+}
+
+/// Reads one frame, refusing one longer than `MAX_FRAME`.
+pub(crate) fn read_frame(r: &mut impl std::io::Read) -> std::io::Result<Vec<u8>> {
+    let mut len = [0; 8];
+    r.read_exact(&mut len)?;
+    let len = u64::from_be_bytes(len);
+    if len > MAX_FRAME {
+        return Err(std::io::Error::other(format!("frame of {len} bytes")));
+    }
+    let mut bytes = vec![0; len as usize];
+    r.read_exact(&mut bytes)?;
+    Ok(bytes)
+}
+
 // The codec of `spec/Cead/Record.lean`: every value is self-delimiting. A
 // variant is a tag byte, then its fields in order; a u64 is eight bytes
 // big-endian; bytes are a u64 length, then the bytes; a key or digest is its
 // 32 bytes.
 
-struct Reader<'a>(&'a [u8]);
+/// Reads the codec's primitives from the front of a byte slice.
+pub(crate) struct Reader<'a>(&'a [u8]);
 
 impl<'a> Reader<'a> {
+    pub(crate) fn new(bytes: &'a [u8]) -> Reader<'a> {
+        Reader(bytes)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     fn take(&mut self, n: usize) -> Result<&'a [u8], Malformed> {
         if self.0.len() < n {
             return Err(Malformed);
@@ -255,17 +289,17 @@ impl<'a> Reader<'a> {
         Ok(head)
     }
 
-    fn tag(&mut self) -> Result<u8, Malformed> {
+    pub(crate) fn tag(&mut self) -> Result<u8, Malformed> {
         Ok(self.take(1)?[0])
     }
 
-    fn u64(&mut self) -> Result<u64, Malformed> {
+    pub(crate) fn u64(&mut self) -> Result<u64, Malformed> {
         let mut b = [0; 8];
         b.copy_from_slice(self.take(8)?);
         Ok(u64::from_be_bytes(b))
     }
 
-    fn bytes(&mut self) -> Result<Vec<u8>, Malformed> {
+    pub(crate) fn bytes(&mut self) -> Result<Vec<u8>, Malformed> {
         let n = usize::try_from(self.u64()?).map_err(|_| Malformed)?;
         Ok(self.take(n)?.to_vec())
     }
@@ -522,6 +556,20 @@ pub(crate) mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
             .collect()
+    }
+
+    /// A frame carries its bytes exactly; an oversized length is refused
+    /// before anything is allocated.
+    #[test]
+    fn frames() {
+        let mut wire = Vec::new();
+        super::write_frame(&mut wire, b"abc").expect("write");
+        super::write_frame(&mut wire, b"").expect("write");
+        let mut r = &wire[..];
+        assert_eq!(super::read_frame(&mut r).expect("read"), b"abc");
+        assert_eq!(super::read_frame(&mut r).expect("read"), b"");
+        let huge = (super::MAX_FRAME + 1).to_be_bytes();
+        assert!(super::read_frame(&mut &huge[..]).is_err());
     }
 
     /// Every encoding Lean accepts, Rust decodes and re-encodes to the same
