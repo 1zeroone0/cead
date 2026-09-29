@@ -1,0 +1,9 @@
+name = "cead"
+defaultTargets = ["Cead"]
+
+[[lean_lib]]
+name = "Cead"
+
+[[lean_exe]]
+name = "differential"
+root = "Cead.Differential"
