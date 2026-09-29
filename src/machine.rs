@@ -90,28 +90,77 @@ pub(crate) mod harness {
     use super::process::{Process, Status};
     use super::shell::Ran;
     use crate::host::job::Limits;
-    use crate::record::{Body, Boot, CallId, ProcId};
+    use crate::record::{Body, Boot, CallId, ProcId, Record, read_frame, write_frame};
+    use std::collections::BTreeSet;
     use std::fs::File;
     use std::time::Instant;
 
-    /// The harness's end of init's signing pipe. Numbers each record, so a
-    /// boot's sequence has no gaps by construction. Owned by the harness.
+    /// The harness's end of init's signing pipes: records out, the log's
+    /// acknowledgments back, each a frame. Numbers each record, so a boot's
+    /// sequence has no gaps by construction; init sent the report at 1, so the
+    /// harness starts at 2. Owned by the harness.
     pub(crate) struct Signer {
-        pipe: File,
+        to_init: File,
+        from_init: File,
         boot: Boot,
         next: u64,
+        acked: BTreeSet<u64>,
     }
 
     impl Signer {
+        pub(crate) fn new(to_init: File, from_init: File, boot: Boot) -> Signer {
+            Signer { to_init, from_init, boot, next: 2, acked: BTreeSet::new() }
+        }
+
         /// Numbers the body and hands it to init to sign and send; returns
         /// its place in the sequence.
         pub(crate) fn send(&mut self, body: Body) -> std::io::Result<u64> {
-            todo!()
+            let seq = self.next;
+            write_frame(&mut self.to_init, &Record::new(self.boot.clone(), seq, body).encode())?;
+            self.next += 1;
+            Ok(seq)
         }
 
-        /// Blocks until the log has acknowledged the record at `seq`.
+        /// Blocks until the log has acknowledged the record at `seq`. An
+        /// acknowledgment is a frame holding a place, big-endian.
         pub(crate) fn acknowledged(&mut self, seq: u64) -> std::io::Result<()> {
-            todo!()
+            while !self.acked.contains(&seq) {
+                let frame = read_frame(&mut self.from_init)?;
+                let place: [u8; 8] = frame.try_into().map_err(|_| std::io::Error::other("not an acknowledgment"))?;
+                self.acked.insert(u64::from_be_bytes(place));
+            }
+            Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::Signer;
+        use crate::record::{Body, Boot, Exit, Record, read_frame, write_frame};
+        use std::fs::File;
+        use std::os::fd::OwnedFd;
+
+        fn pipe() -> (File, File) {
+            let (r, w) = std::io::pipe().expect("pipe");
+            (File::from(OwnedFd::from(r)), File::from(OwnedFd::from(w)))
+        }
+
+        /// Records leave numbered from 2 without a gap; `acknowledged` waits
+        /// for its place whatever order acknowledgments come in.
+        #[test]
+        fn numbers_and_waits() {
+            let ((mut init_reads, harness_writes), (harness_reads, mut init_writes)) = (pipe(), pipe());
+            let boot = Boot::new([7; 32]);
+            let mut signer = Signer::new(harness_writes, harness_reads, boot.clone());
+            assert_eq!(signer.send(Body::Exit(Exit::Meter)).expect("send"), 2);
+            assert_eq!(signer.send(Body::Exit(Exit::Limit)).expect("send"), 3);
+            let first = Record::decode(&read_frame(&mut init_reads).expect("frame")).expect("record");
+            assert_eq!(first, Record::new(boot, 2, Body::Exit(Exit::Meter)));
+            for place in [3u64, 2] {
+                write_frame(&mut init_writes, &place.to_be_bytes()).expect("ack");
+            }
+            signer.acknowledged(2).expect("acked");
+            signer.acknowledged(3).expect("acked");
         }
     }
 
@@ -224,8 +273,39 @@ pub(crate) mod process {
     pub(crate) struct Amplification;
 
     impl Rights {
+        /// `to`, if every path it grants lies under one this grants for the
+        /// same right.
         pub(crate) fn attenuate(&self, to: Rights) -> Result<Rights, Amplification> {
-            todo!()
+            let within = |mine: &[PathBuf], theirs: &[PathBuf]| {
+                theirs.iter().all(|t| mine.iter().any(|m| t.starts_with(m)))
+            };
+            if within(&self.read, &to.read) && within(&self.write, &to.write) {
+                Ok(to)
+            } else {
+                Err(Amplification)
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::Rights;
+        use std::path::PathBuf;
+
+        fn rights(read: &[&str], write: &[&str]) -> Rights {
+            let paths = |ps: &[&str]| ps.iter().map(PathBuf::from).collect();
+            Rights { read: paths(read), write: paths(write) }
+        }
+
+        /// A child gets its parent's rights or fewer, never more.
+        #[test]
+        fn attenuates_never_amplifies() {
+            let parent = rights(&["/work"], &["/work/out"]);
+            assert!(parent.attenuate(rights(&["/work/src"], &["/work/out/a"])).is_ok());
+            assert!(parent.attenuate(rights(&[], &[])).is_ok());
+            assert!(parent.attenuate(rights(&["/etc"], &[])).is_err());
+            assert!(parent.attenuate(rights(&[], &["/work/src"])).is_err());
+            assert!(parent.attenuate(rights(&["/workshop"], &[])).is_err());
         }
     }
 

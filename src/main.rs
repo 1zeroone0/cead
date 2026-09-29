@@ -27,7 +27,39 @@ impl Role {
     /// Chooses the role from argv: `agent` by the name it was run as, the rest
     /// by subcommand.
     fn parse(args: Vec<std::ffi::OsString>) -> Result<Role, Usage> {
-        todo!()
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = |a: &std::ffi::OsString| a.as_bytes().to_vec();
+        let name = args.first().and_then(|a| std::path::Path::new(a).file_name());
+        let rest = args.get(1..).unwrap_or_default();
+        match (name.map(|n| n.as_bytes()), rest) {
+            (Some(b"agent"), [query]) => Ok(Role::Agent { query: bytes(query) }),
+            (Some(b"agent"), _) => Err(Usage("usage: agent QUERY < slice".into())),
+            (_, [verb, query]) if verb == "run" => Ok(Role::Run { query: bytes(query) }),
+            (_, [verb]) if verb == "init" => Ok(Role::Init),
+            (_, [verb]) if verb == "harness" => Ok(Role::Harness),
+            _ => Err(Usage("usage: cead run QUERY < context > answer".into())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Role;
+
+    fn parse(args: &[&str]) -> Option<Role> {
+        Role::parse(args.iter().map(std::ffi::OsString::from).collect()).ok()
+    }
+
+    /// `agent` by the name it runs as; the rest by subcommand; nothing else.
+    #[test]
+    fn roles() {
+        assert!(matches!(parse(&["/core/bin/agent", "find x"]), Some(Role::Agent { query }) if query == b"find x"));
+        assert!(matches!(parse(&["cead", "run", "q"]), Some(Role::Run { query }) if query == b"q"));
+        assert!(matches!(parse(&["/cead", "init"]), Some(Role::Init)));
+        assert!(matches!(parse(&["/proc/self/exe", "harness"]), Some(Role::Harness)));
+        assert!(parse(&["agent"]).is_none());
+        assert!(parse(&["cead", "run"]).is_none());
+        assert!(parse(&["cead"]).is_none());
     }
 }
 
